@@ -3,10 +3,9 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined('_JEXEC') or die;
 
 class OSMembershipViewSubscriptioncancelHtml extends MPFViewHtml
@@ -24,9 +23,12 @@ class OSMembershipViewSubscriptioncancelHtml extends MPFViewHtml
 			->where('id = ' . $subscriptionId);
 		$db->setQuery($query);
 		$rowSubscriber = $db->loadObject();
+
 		if (!$rowSubscriber)
 		{
-			JFactory::getApplication()->redirect('index.php', JText::_('Invalid subscription code'));
+			$app = JFactory::getApplication();
+			$app->enqueueMessage(JText::_('Invalid subscription code'));
+			$app->redirect(JUri::root(), 404);
 		}
 
 		$messageObj  = OSMembershipHelper::getMessages();

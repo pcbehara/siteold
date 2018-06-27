@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+    <layout title="User's Schedule K2 Items">
+        <message>
+            Display list of Schedule K2 items which the logged in subscribers can access to
+        </message>
+    </layout>
+    <fields name="request">
+        <fieldset name="request"
+                  addfieldpath="/administrator/components/com_osmembership/model/fields">
+            <field name="id" type="osmplan" size="3" default="0" label="Select Plan" description="Select Plan which you want to display schedule content for" />
+        </fieldset>
+    </fields>
+</metadata>

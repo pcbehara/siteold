@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+	<layout title="My Pages">
+		<message>
+			Display list of pages which subscriber can access to. These pages are setup using URLs restriction method
+		</message>
+	</layout>		
+</metadata>

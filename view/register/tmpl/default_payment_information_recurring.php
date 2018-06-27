@@ -3,11 +3,12 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 defined('_JEXEC') or die ;
 
+/**@var OSMembershipHelperBootstrap $bootstrapHelper **/
 $bootstrapHelper   = $this->bootstrapHelper;
 $controlGroupClass = $bootstrapHelper->getClassMapping('control-group');
 $inputPrependClass = $bootstrapHelper->getClassMapping('input-prepend');
@@ -34,24 +35,16 @@ if ($this->fees['trial_duration'] > 0)
 		</label>
 		<div class="<?php echo $controlsClass; ?>">
 			<?php
-			if ($this->config->currency_position == 0)
-			{
-			?>
-				<div class="<?php echo $inputPrependClass; ?> inline-display">
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-					<input id="trial_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_amount'], $this->config); ?>" />
-				</div>
-			<?php
-			}
-			else
-			{
-			?>
-				<div class="<?php echo $inputAppendClass; ?> inline-display">
-					<input id="trial_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_amount'], $this->config); ?>" />
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				</div>
-			<?php
-			}
+                $input = '<input id="trial_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['trial_amount'], $this->config) . '" />';
+
+                if ($this->config->currency_position == 0)
+                {
+                    echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
+                }
+                else
+                {
+                    echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
+                }
 			?>
 		</div>
 	</div>
@@ -71,23 +64,15 @@ if ($this->fees['trial_duration'] > 0)
 	</label>
 	<div class="<?php echo $controlsClass; ?>">
 		<?php
+		$input = '<input id="trial_discount_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['trial_discount_amount'], $this->config) . '" />';
+
 		if ($this->config->currency_position == 0)
 		{
-		?>
-			<div class="<?php echo $inputPrependClass; ?> inline-display">
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				<input id="trial_discount_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_discount_amount'], $this->config); ?>" />
-			</div>
-		<?php
+			echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 		}
 		else
 		{
-		?>
-			<div class="<?php echo $inputAppendClass; ?> inline-display">
-				<input id="trial_discount_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_discount_amount'], $this->config); ?>" />
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-			</div>
-		<?php
+			echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 		}
 		?>
 	</div>
@@ -109,23 +94,15 @@ if ($this->fees['trial_duration'] > 0)
 	</div>
 	<div class="<?php echo $controlsClass; ?>">
 		<?php
+		$input = '<input id="trial_tax_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['trial_tax_amount'], $this->config) . '" />';
+
 		if ($this->config->currency_position == 0)
 		{
-		?>
-			<div class="<?php echo $inputPrependClass; ?> inline-display">
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				<input id="trial_tax_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_tax_amount'], $this->config); ?>" />
-			</div>
-		<?php
+			echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 		}
 		else
 		{
-		?>
-			<div class="<?php echo $inputAppendClass; ?> inline-display">
-				<input id="trial_tax_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_tax_amount'], $this->config); ?>" />
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-			</div>
-		<?php
+			echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 		}
 		?>
 	</div>
@@ -146,23 +123,15 @@ if ($this->fees['trial_duration'] > 0)
 	</div>
 	<div class="<?php echo $controlsClass; ?>">
 		<?php
+		$input = '<input id="trial_payment_processing_fee" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['trial_payment_processing_fee'], $this->config) . '" />';
+
 		if ($this->config->currency_position == 0)
 		{
-		?>
-			<div class="<?php echo $inputPrependClass; ?> inline-display">
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				<input id="trial_payment_processing_fee" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_payment_processing_fee'], $this->config); ?>" />
-			</div>
-		<?php
+			echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 		}
 		else
 		{
-		?>
-			<div class="<?php echo $inputAppendClass; ?> inline-display">
-				<input id="trial_payment_processing_fee" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_payment_processing_fee'], $this->config); ?>" />
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-			</div>
-		<?php
+			echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 		}
 		?>
 	</div>
@@ -183,23 +152,15 @@ if ($this->fees['trial_duration'] > 0)
 		</div>
 		<div class="<?php echo $controlsClass; ?>">
 			<?php
+			$input = '<input id="trial_gross_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['trial_gross_amount'], $this->config) . '" />';
+
 			if ($this->config->currency_position == 0)
 			{
-				?>
-				<div class="<?php echo $inputPrependClass; ?> inline-display">
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-					<input id="trial_gross_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_gross_amount'], $this->config); ?>" />
-				</div>
-				<?php
+				echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 			}
 			else
 			{
-				?>
-				<div class="<?php echo $inputAppendClass; ?> inline-display">
-					<input id="trial_gross_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['trial_gross_amount'], $this->config); ?>" />
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				</div>
-				<?php
+				echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 			}
 			?>
 			<div class="explain-text inline-display"><?php echo $this->trialPeriorText; ?></div>
@@ -214,23 +175,15 @@ if ($this->fees['trial_duration'] > 0)
 	</div>
 	<div class="<?php echo $controlsClass; ?>">
 		<?php
+		$input = '<input id="regular_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['regular_amount'], $this->config) . '" />';
+
 		if ($this->config->currency_position == 0)
 		{
-		?>
-			<div class="<?php echo $inputPrependClass; ?> inline-display">
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				<input id="regular_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_amount'], $this->config); ?>" />
-			</div>
-		<?php
+			echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 		}
 		else
 		{
-		?>
-			<div class="<?php echo $inputAppendClass; ?> inline-display">
-				<input id="regular_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_amount'], $this->config); ?>" />
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-			</div>
-		<?php
+			echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 		}
 		?>
 	</div>
@@ -252,23 +205,15 @@ else
 		</div>
 		<div class="<?php echo $controlsClass; ?>">
 			<?php
+			$input = '<input id="regular_discount_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['regular_discount_amount'], $this->config) . '" />';
+
 			if ($this->config->currency_position == 0)
 			{
-			?>
-				<div class="<?php echo $inputPrependClass; ?> inline-display">
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-					<input id="regular_discount_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_discount_amount'], $this->config); ?>" />
-				</div>
-			<?php
+				echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 			}
 			else
 			{
-			?>
-				<div class="<?php echo $inputAppendClass; ?> inline-display">
-					<input id="regular_discount_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_discount_amount'], $this->config); ?>" />
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				</div>
-			<?php
+				echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 			}
 			?>
 		</div>
@@ -290,23 +235,15 @@ else
 		</div>
 		<div class="<?php echo $controlsClass; ?>">
 			<?php
+			$input = '<input id="regular_tax_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['regular_tax_amount'], $this->config) . '" />';
+
 			if ($this->config->currency_position == 0)
 			{
-			?>
-				<div class="<?php echo $inputPrependClass; ?> inline-display">
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-					<input id="regular_tax_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_tax_amount'], $this->config); ?>" />
-				</div>
-			<?php
+				echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 			}
 			else
 			{
-			?>
-				<div class="<?php echo $inputAppendClass; ?> inline-display">
-					<input id="regular_tax_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_tax_amount'], $this->config); ?>" />
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				</div>
-			<?php
+				echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 			}
 			?>
 		</div>
@@ -327,23 +264,15 @@ else
 		</div>
 		<div class="<?php echo $controlsClass; ?>">
 			<?php
+			$input = '<input id="regular_payment_processing_fee" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['regular_payment_processing_fee'], $this->config) . '" />';
+
 			if ($this->config->currency_position == 0)
 			{
-			?>
-				<div class="<?php echo $inputPrependClass; ?> inline-display">
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-					<input id="regular_payment_processing_fee" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_payment_processing_fee'], $this->config); ?>" />
-				</div>
-			<?php
+				echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 			}
 			else
 			{
-			?>
-				<div class="<?php echo $inputAppendClass; ?> inline-display">
-					<input id="regular_payment_processing_fee" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_payment_processing_fee'], $this->config); ?>" />
-					<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				</div>
-			<?php
+				echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 			}
 			?>
 		</div>
@@ -364,23 +293,15 @@ else
 	</div>
 	<div class="<?php echo $controlsClass; ?>">
 		<?php
+		$input = '<input id="regular_gross_amount" type="text" readonly="readonly" class="input-small" value="' . OSMembershipHelper::formatAmount($this->fees['regular_gross_amount'], $this->config) . '" />';
+
 		if ($this->config->currency_position == 0)
 		{
-		?>
-			<div class="<?php echo $inputPrependClass; ?> inline-display">
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-				<input id="regular_gross_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_gross_amount'], $this->config); ?>" />
-			</div>
-		<?php
+			echo $bootstrapHelper->getPrependAddon($input, $this->currencySymbol);
 		}
 		else
 		{
-		?>
-			<div class="<?php echo $inputAppendClass; ?> inline-display">
-				<input id="regular_gross_amount" type="text" readonly="readonly" class="input-small" value="<?php echo OSMembershipHelper::formatAmount($this->fees['regular_gross_amount'], $this->config); ?>" />
-				<span class="<?php echo $addOnClass; ?>"><?php echo $this->currencySymbol?></span>
-			</div>
-		<?php
+			echo $bootstrapHelper->getAppendAddon($input, $this->currencySymbol);
 		}
 		?>
 	</div>

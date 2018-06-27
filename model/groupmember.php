@@ -6,7 +6,6 @@
  * @copyright      Copyright (C) 2012 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined('_JEXEC') or die;
 
 /**
@@ -25,6 +24,7 @@ class OSMembershipModelGroupmember extends MPFModel
 	public function __construct($config = array())
 	{
 		$config['table'] = '#__osmembership_subscribers';
+
 		parent::__construct($config);
 
 		$this->state->insert('id', 'int', 0);
@@ -55,37 +55,19 @@ class OSMembershipModelGroupmember extends MPFModel
 	{
 		$row   = $this->getTable('Subscriber');
 		$isNew = true;
+
 		if (!$data['id'] && $data['username'] && $data['password'] && empty($data['user_id']))
 		{
-			//Store this account into the system and get the username
-			jimport('joomla.user.helper');
-			$params      = JComponentHelper::getParams('com_users');
-			$newUserType = $params->get('new_usertype', 2);
-
-			$data['groups']   = array();
-			$data['groups'][] = $newUserType;
-			$data['block']    = 0;
-			$data['name']     = $data['first_name'] . ' ' . $data['last_name'];
-			$data['email1']   = $data['email2'] = $data['email'];
-			$user             = new JUser();
-			$user->bind($data);
-			if (!$user->save())
-			{
-				JFactory::getApplication()->redirect('index.php?option=com_osmembership&view=groupmembers', $user->getError(), 'error');
-			}
-			$data['user_id'] = $user->id;
+			$data['user_id'] = OSMembershipHelper::saveRegistration($data);
 		}
+
 		if ($data['id'])
 		{
 			$isNew = false;
 			$row->load($data['id']);
 		}
-		if (!$row->bind($data))
-		{
-			$this->setError($this->_db->getErrorMsg());
 
-			return false;
-		}
+		$row->bind($data);
 
 		if ($isNew)
 		{
@@ -105,12 +87,12 @@ class OSMembershipModelGroupmember extends MPFModel
 			$db->setQuery($query);
 			$row->to_date = $db->loadResult();
 		}
+
 		if (!$row->store())
 		{
-			$this->setError($this->_db->getErrorMsg());
-
-			return false;
+			throw new Exception($row->getError());
 		}
+
 		if ($isNew)
 		{
 			$row->profile_id = $row->id;
@@ -118,15 +100,17 @@ class OSMembershipModelGroupmember extends MPFModel
 		}
 
 		$rowFields = OSMembershipHelper::getProfileFields($row->plan_id, false);
-		$form = new MPFForm($rowFields);
+		$form      = new MPFForm($rowFields);
 		$form->storeData($row->id, $data);
 
 		if ($isNew && $row->user_id)
 		{
 			JPluginHelper::importPlugin('osmembership');
-			$dispatcher = JEventDispatcher::getInstance();
-			$dispatcher->trigger('onAfterStoreSubscription', array($row));
-			$dispatcher->trigger('onMembershipActive', array($row));
+			$app = JFactory::getApplication();
+			$app->triggerEvent('onAfterStoreSubscription', array($row));
+			$app->triggerEvent('onMembershipActive', array($row));
+
+			OSMembershipHelperMail::sendNewGroupMemberEmail($row);
 		}
 
 		return true;
@@ -143,37 +127,40 @@ class OSMembershipModelGroupmember extends MPFModel
 	{
 		$row = $this->getTable('Subscriber');
 		$row->load($id);
+
 		if ($row)
 		{
-			$db = $this->getDbo();
+			$db    = $this->getDbo();
 			$query = $db->getQuery(true);
 			$query->delete('#__osmembership_field_value')
 				->where('subscriber_id = ' . $id);
 			$db->setQuery($query);
 			$db->execute();
-			JPluginHelper::importPlugin('osmembership');
-			$dispatcher = JEventDispatcher::getInstance();
-			$dispatcher->trigger('onMembershipExpire', array($row));
 
-			$query->clear();
+			JPluginHelper::importPlugin('osmembership');
+			JFactory::getApplication()->triggerEvent('onMembershipExpire', array($row));
+
 			if ($row->user_id)
 			{
 				// If there is only one subscription record, we will delete Joomla account as well
-				$query->select('COUNT(*)')
+				$query->clear()
+					->select('COUNT(*)')
 					->from('#__osmembership_subscribers')
 					->where('user_id = ' . $row->user_id);
 				$db->setQuery($query);
 				$total = (int) $db->loadResult();
-				if ($total == 1)
+
+				/*if ($total == 1)
 				{
 					// Only one record
 					$rowUser = new JUser();
 					$rowUser->load($row->user_id);
+
 					if ($rowUser)
 					{
 						$rowUser->delete();
 					}
-				}
+				}*/
 			}
 
 			// Delete the subscription record

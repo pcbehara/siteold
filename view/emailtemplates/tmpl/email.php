@@ -3,10 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright	Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright	Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// Check to ensure this file is included in Joomla!
+
 defined('_JEXEC') or die ;
 $fields = $form->getFields();
 ?>
@@ -67,8 +67,31 @@ $fields = $form->getFields();
 		<?php
 		}
 	?>
-	
-	
+	<tr>
+		<td class="title_cell">
+			<?php echo JText::_('OSM_SUBSCRIPTION_START_DATE'); ?>
+		</td>
+		<td class="field_cell">
+			<?php echo JHtml::_('date', $row->from_date, $config->date_format); ?>
+		</td>
+	</tr>
+	<tr>
+		<td class="title_cell">
+			<?php echo JText::_('OSM_SUBSCRIPTION_END_DATE'); ?>
+		</td>
+		<td class="field_cell">
+			<?php
+				if ($lifetimeMembership || $row->to_date == '2099-12-31 23:59:59')
+				{
+					echo JText::_('OSM_LIFETIME');
+				}
+				else
+				{
+					echo JHtml::_('date', $row->to_date, $config->date_format);
+				}
+			?>
+		</td>
+	</tr>
 	<?php
 
 	if (!empty($config->use_email_as_username))
@@ -78,7 +101,7 @@ $fields = $form->getFields();
 
 	foreach ($fields as $field)
 	{
-		if (!$field->visible)
+		if (!$field->visible || $field->row->hide_on_email)
 		{
 			continue;
 		}
@@ -134,45 +157,47 @@ $fields = $form->getFields();
 					break;
 				default:
 					?>
-
-					<?php if($field->name <> 'city') { ?>
-
-						<tr>
-							<td class="title_cell">
-								<?php echo JText::_($field->title); ?>
-							</td>
-							<td class="field_cell">
-								<?php
-								if ($field->name == 'state')
+					<tr>
+						<td class="title_cell">
+							<?php echo JText::_($field->title); ?>
+						</td>
+						<td class="field_cell">
+							<?php
+							if ($field->name == 'state')
+							{
+								$fieldValue = OSMembershipHelper::getStateName($row->country, $field->value);
+							}
+							else
+							{
+								$fieldValue = $field->value;
+								if (is_string($fieldValue) && is_array(json_decode($fieldValue)))
 								{
-									$fieldValue = OSMembershipHelper::getStateName($row->country, $field->value);
+									$fieldValue = implode(', ', json_decode($fieldValue));
 								}
-								else
-								{
-									$fieldValue = $field->value;
-									if (is_string($fieldValue) && is_array(json_decode($fieldValue)))
-									{
-										$fieldValue = implode(', ', json_decode($fieldValue));
-									}
-								}
-								echo $fieldValue;
-								?>
-							</td>
-						</tr>
-
-					<?php } ?>
-
-
-
-					
-
-
+							}
+							echo $fieldValue;
+							?>
+						</td>
+					</tr>
 					<?php
 					break;
 			}
 		}
 		if ($row->gross_amount > 0)
 		{
+			if ($row->setup_fee > 0)
+			{
+			?>
+				<tr>
+					<td class="title_cell">
+						<?php echo JText::_('OSM_SETUP_FEE'); ?>
+					</td>
+					<td>
+						<?php echo OSMembershipHelper::formatCurrency($row->setup_fee, $config, $currencySymbol); ?>
+					</td>
+				</tr>
+			<?php
+			}
 		?>
 			<tr>
 				<td class="title_cell">
@@ -222,7 +247,7 @@ $fields = $form->getFields();
 					</tr>
 				<?php
 				}
-				if ($row->discount_amount > 0 || $row->tax_amount > 0 || $row->payment_processing_fee > 0)
+				if ($row->setup_fee > 0 || $row->discount_amount > 0 || $row->tax_amount > 0 || $row->payment_processing_fee > 0)
 				{
 				?>
 					<tr>
@@ -236,8 +261,50 @@ $fields = $form->getFields();
 				<?php
 				}
 			?>
-			
-			
+			<tr>
+				<td class="title_cell">
+					<?php echo JText::_('OSM_PAYMENT_OPTION'); ?>
+				</td>
+				<td class="field_cell">
+					<?php
+						$method = os_payments::loadPaymentMethod($row->payment_method) ;
+						if ($method)
+						{
+							echo JText::_($method->title);
+						}
+					?>
+				</td>
+			</tr>
+
+            <?php
+                if ($row->subscription_id)
+                {
+                ?>
+                    <tr>
+                        <td class="title_cell">
+                            <?php echo JText::_('OSM_SUBSCRIPTION_ID'); ?>
+                        </td>
+                        <td class="field_cell">
+                            <?php echo $row->subscription_id ; ?>
+                        </td>
+                    </tr>
+                <?php
+                }
+
+                if ($row->transaction_id)
+                {
+                ?>
+                    <tr>
+                        <td class="title_cell">
+			                <?php echo JText::_('OSM_TRANSACTION_ID'); ?>
+                        </td>
+                        <td class="field_cell">
+			                <?php echo $row->transaction_id ; ?>
+                        </td>
+                    </tr>
+                <?php
+                }
+            ?>
 		<?php
 			if ($toAdmin && ($row->payment_method == 'os_creditcard'))
 			{

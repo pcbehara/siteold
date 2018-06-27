@@ -3,7 +3,7 @@
  * @package        Joomla
  * @subpackage     OSMembership
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 defined('_JEXEC') or die;
@@ -11,29 +11,25 @@ $fields = $this->fields;
 $cols = count($fields) + 2;
 ?>
 <div id="osm-subscription-history" class="osm-container row-fluid">
+	<div class="page-header">
+		<h1 class="osm-page-title">
+			<?php
+			echo JText::_('OSM_GROUP_MEMBERS_LIST') ;
+
+			if ($this->canManage == 2)
+			{
+			?>
+				<span class="osm-add-group-member_link pull-right"><a href="<?php echo JRoute::_('index.php?option=com_osmembership&view=groupmember&Itemid='. OSMembershipHelperRoute::findView('groupmember', $this->Itemid)); ?>"><?php echo JText::_('OSM_ADD_NEW_GROUP_MEMBER'); ?></a></span>
+			<?php
+			}
+			?>
+		</h1>
+	</div>
 <form method="post" name=os_form id="os_form" action="<?php echo JRoute::_('index.php?option=com_osmembership&view=groupmembers&Itemid='.$this->Itemid); ?>">
-<h1 class="osm-page-title">
-	<?php echo JText::_('OSM_GROUP_MEMBERS_LIST') ; ?>
-	<?php
-		if ($this->canManage == 2)
-		{
-		?>
-			<span class="osm-add-group-member_link pull-right"><a href="<?php echo JRoute::_('index.php?option=com_osmembership&view=groupmember&Itemid='. OSMembershipHelperRoute::findView('groupmember', $this->Itemid)); ?>"><?php echo JText::_('OSM_ADD_NEW_GROUP_MEMBER'); ?></a></span>
-		<?php
-		}
-	?>
-</h1>
-	<table width="100%">
-		<tr>
-			<td align="left">
-				<?php echo JText::_( 'OSM_FILTER' ); ?>:
-				<input type="text" name="search" id="filter_search" value="<?php echo $this->state->search;?>" class="input-medium" onchange="this.form.submit();" />
-				<button onclick="this.form.submit();" class="btn"><?php echo JText::_( 'OSM_GO' ); ?></button>
-				<button onclick="document.getElementById('filter_search').value='';this.form.submit();" class="btn"><?php echo JText::_( 'OSM_RESET' ); ?></button>
-			</td >
-		</tr>
-	</table>
-	<table class="table table-striped table-bordered table-condensed">
+	<fieldset class="filters btn-toolbar clearfix">
+        <?php echo $this->loadTemplate('search'); ?>
+	</fieldset>
+	<table class="table table-striped table-bordered table-hover">
 		<thead>
 			<tr>
 				<th><?php echo JText::_('OSM_PLAN'); ?></th>
@@ -42,6 +38,16 @@ $cols = count($fields) + 2;
 					{
 					?>
 						<th><?php echo $field->title; ?></th>
+					<?php
+					}
+
+					if ($this->config->auto_generate_membership_id)
+					{
+						$cols++ ;
+					?>
+						<th width="8%" class="center">
+							<?php echo JText::_('OSM_MEMBERSHIP_ID'); ?>
+						</th>
 					<?php
 					}
 				?>
@@ -69,8 +75,24 @@ $cols = count($fields) + 2;
 					?>
 						<td>
 							<?php
-								echo $row->{$field->name};
+								if ($field->is_core)
+								{
+									echo $row->{$field->name};
+								}
+								elseif (isset($this->fieldsData[$row->id][$field->id]))
+								{
+									echo $this->fieldsData[$row->id][$field->id];
+								}
 							?>
+						</td>
+					<?php
+					}
+
+					if ($this->config->auto_generate_membership_id)
+					{
+					?>
+						<td class="center">
+							<?php echo $row->membership_id ? OSMembershipHelper::formatMembershipId($row, $this->config) : ''; ?>
 						</td>
 					<?php
 					}
@@ -90,7 +112,7 @@ $cols = count($fields) + 2;
 			<tfoot>
 				<tr>
 					<td colspan="<?php echo $cols; ?>">
-						<div class="pagination"><?php echo $this->pagination->getListFooter(); ?></div>
+						<div class="pagination"><?php echo $this->pagination->getPagesLinks(); ?></div>
 					</td>
 				</tr>
 			</tfoot>

@@ -3,11 +3,10 @@
  * @package        Joomla
  * @subpackage     OSMembership
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// no direct access
 defined('_JEXEC') or die;
 
 class OSMembershipControllerGroupmember extends OSMembershipController
@@ -21,6 +20,7 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 		$post      = $this->input->post->getData();
 		$memberId  = (int) $post['cid'][0];
 		$canManage = OSMembershipHelper::getManageGroupMemberPermission();
+
 		if (($memberId && $canManage >= 1) || ($canManage == 2))
 		{
 			$model = $this->getModel('groupmember');
@@ -36,16 +36,17 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 					->where('plan_id = ' . (int) $post['plan_id']);
 				$db->setQuery($query);
 				$total = $db->loadResult();
+
 				if ($total > 0)
 				{
 					// This user is a group member of the plan already
-					$this->setRedirect(JRoute::_('index.php?option=com_osmembership&view=groupmember&Itemid = ' . $this->input->getInt('Itemid', 0), JText::_('OSM_USER_IS_GROUP_MEMBER_ALREADY'), 'warning'));
+					$this->setRedirect(JRoute::_('index.php?option=com_osmembership&view=groupmember&Itemid = ' . $this->input->getInt('Itemid', 0), false), JText::_('OSM_USER_IS_GROUP_MEMBER_ALREADY'), 'warning');
 
 					return;
 				}
 			}
 
-			$config = OSMembershipHelper::getConfig();
+			$config           = OSMembershipHelper::getConfig();
 			$post['id']       = (int) $post['cid'][0];
 			$post['password'] = $post['password1'];
 
@@ -56,7 +57,7 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 
 			$model->store($post);
 			$Itemid = OSMembershipHelperRoute::findView('groupmembers', $this->input->getInt('Itemid', 0));
-			$this->setRedirect(JRoute::_('index.php?option=com_osmembership&view=groupmembers&Itemid=' . $Itemid), JText::_('OSM_GROUP_MEMBER_WAS_SUCCESSFULL_CREATED'));
+			$this->setRedirect(JRoute::_('index.php?option=com_osmembership&view=groupmembers&Itemid=' . $Itemid, false), JText::_('OSM_GROUP_MEMBER_WAS_SUCCESSFULL_CREATED'));
 		}
 		else
 		{
@@ -71,13 +72,14 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 	{
 		$this->csrfProtection();
 		$canManage = OSMembershipHelper::getManageGroupMemberPermission();
+
 		if ($canManage >= 1)
 		{
 			$id     = $this->input->getInt('member_id', 0);
 			$Itemid = $this->input->getInt('Itemid', 0);
 			$model  = $this->getModel('groupmember');
 			$model->deleteMember($id);
-			$this->setRedirect(JRoute::_('index.php?option=com_osmembership&view=groupmembers&Itemid=' . $Itemid), JText::_('OSM_GROUP_MEMBER_WAS_SUCCESSFULL_DELETED'));
+			$this->setRedirect(JRoute::_('index.php?option=com_osmembership&view=groupmembers&Itemid=' . $Itemid, false), JText::_('OSM_GROUP_MEMBER_WAS_SUCCESSFULL_DELETED'));
 		}
 		else
 		{
@@ -92,12 +94,14 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 	{
 		// Check permission
 		$canManage = OSMembershipHelper::getManageGroupMemberPermission();
+
 		if ($canManage >= 1)
 		{
 			$input  = $this->input;
 			$userId = $input->getInt('user_id', 0);
 			$planId = $input->getInt('plan_id');
 			$data   = array();
+
 			if ($userId)
 			{
 				$rowFields = OSMembershipHelper::getProfileFields($planId, true);
@@ -110,6 +114,7 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 				$db->setQuery($query);
 				$rowProfile = $db->loadObject();
 				$data       = array();
+
 				if ($rowProfile)
 				{
 					$data = OSMembershipHelper::getProfileData($rowProfile, $planId, $rowFields);
@@ -118,6 +123,7 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 				{
 					// Trigger plugin to get data
 					$mappings = array();
+
 					foreach ($rowFields as $rowField)
 					{
 						if ($rowField->field_mapping)
@@ -125,9 +131,10 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 							$mappings[$rowField->name] = $rowField->field_mapping;
 						}
 					}
+
 					JPluginHelper::importPlugin('osmembership');
-					$dispatcher = JEventDispatcher::getInstance();
-					$results    = $dispatcher->trigger('onGetProfileData', array($userId, $mappings));
+					$results    = $this->app->triggerEvent('onGetProfileData', array($userId, $mappings));
+
 					if (count($results))
 					{
 						foreach ($results as $res)
@@ -140,10 +147,12 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 						}
 					}
 				}
+
 				if (!count($data) && JPluginHelper::isEnabled('user', 'profile'))
 				{
 					$synchronizer = new MPFSynchronizerJoomla();
 					$mappings     = array();
+
 					foreach ($rowFields as $rowField)
 					{
 						if ($rowField->profile_field_mapping)
@@ -151,6 +160,7 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 							$mappings[$rowField->name] = $rowField->profile_field_mapping;
 						}
 					}
+
 					$data = $synchronizer->getData($userId, $mappings);
 				}
 			}
@@ -160,9 +170,11 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 				//Load the name from Joomla default name
 				$user = JFactory::getUser($userId);
 				$name = $user->name;
+
 				if ($name)
 				{
 					$pos = strpos($name, ' ');
+
 					if ($pos !== false)
 					{
 						$data['first_name'] = substr($name, 0, $pos);
@@ -175,12 +187,15 @@ class OSMembershipControllerGroupmember extends OSMembershipController
 					}
 				}
 			}
+
 			if ($userId && !isset($data['email']))
 			{
 				$user          = JFactory::getUser($userId);
 				$data['email'] = $user->email;
 			}
+
 			echo json_encode($data);
+
 			$this->app->close();
 		}
 	}

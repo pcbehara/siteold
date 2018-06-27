@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+    <layout title="Pricing table flat layout">
+        <message>
+            Displays a list of subscription plans in pricing table flat layout.
+        </message>
+    </layout>
+    <fields name="request">
+        <fieldset name="request"
+                  addfieldpath="/administrator/components/com_osmembership/model/fields">
+            <field name="id" type="osmcategory" size="3" default="0" label="Select Category"
+                   description="Select category which you want to display subscription plans"/>
+        </fieldset>
+    </fields>
+    <fields name="params">
+        <fieldset name="basic">
+            <field name="recommended_campaign_id" type="text" size="3" default="" label="Recommended Plan ID"
+                   description="ID of the subscription plan which will be marked as recommended"></field>
+            <field name="standard_plan_color" type="color" default="#00B69C" label="Standard plan backround color"
+                   description="Choose background color of the standard plans"></field>
+            <field name="recommended_plan_color" type="color" default="#F75500" label="Recommended plan color"
+                   description="Choose background color of the recommended plan"></field>
+            <field name="show_details_button" type="list" label="Show details button" default="0">
+                <option value="0">No</option>
+                <option value="1">Yes</option>
+            </field>
+        </fieldset>
+    </fields>
+</metadata>

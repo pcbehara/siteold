@@ -3,10 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// Check to ensure this file is included in Joomla!
+
 defined('_JEXEC') or die;
 
 class OSMembershipModelGroupmembers extends MPFModelList
@@ -19,12 +19,11 @@ class OSMembershipModelGroupmembers extends MPFModelList
 	public function __construct($config = array())
 	{
 		$config['table']         = '#__osmembership_subscribers';
-		$config['search_fields'] = array('a.first_name', 'a.last_name', 'a.email');
+		$config['search_fields'] = array('tbl.first_name', 'tbl.last_name', 'tbl.email');
 
 		parent::__construct($config);
 
-		$this->state->insert('search', 'string', '')
-			->setDefault('filter_order', 'tbl.created_date')
+		$this->state->setDefault('filter_order', 'tbl.created_date')
 			->setDefault('filter_order_Dir', 'DESC');
 
 	}
@@ -74,5 +73,44 @@ class OSMembershipModelGroupmembers extends MPFModelList
 		$query->where('tbl.group_admin_id = ' . JFactory::getUser()->id);
 
 		return $this;
+	}
+
+	/**
+	 * Get profile custom fields data
+	 *
+	 * @return array
+	 */
+	public function getFieldsData()
+	{
+		$fieldsData = array();
+		$rows       = $this->data;
+
+		if (count($rows))
+		{
+			$db    = $this->getDbo();
+			$query = $db->getQuery(true);
+			$ids   = array();
+
+			foreach ($rows as $row)
+			{
+				$ids[] = $row->id;
+			}
+
+			$query->select('*')
+				->from('#__osmembership_field_value')
+				->where('subscriber_id IN (' . implode(',', $ids) . ')');
+			$db->setQuery($query);
+			$fieldValues = $db->loadObjectList();
+
+			if (count($fieldValues))
+			{
+				foreach ($fieldValues as $fieldValue)
+				{
+					$fieldsData[$fieldValue->subscriber_id][$fieldValue->field_id] = $fieldValue->field_value;
+				}
+			}
+		}
+
+		return $fieldsData;
 	}
 }

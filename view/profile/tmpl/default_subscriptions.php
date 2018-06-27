@@ -3,10 +3,9 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined('_JEXEC') or die;
 ?>
 <table class="table table-bordered table-striped">
@@ -18,7 +17,7 @@ defined('_JEXEC') or die;
 		<th width="25%" class="center">
 			<?php echo JText::_('OSM_ACTIVATE_TIME') ; ?>
 		</th>
-		<th width="10%" class="center">
+		<th width="25%" class="center">
 			<?php echo JText::_('OSM_SUBSCRIPTION_STATUS'); ?>
 		</th>
 	</tr>
@@ -68,13 +67,25 @@ defined('_JEXEC') or die;
 				if ($subscription->subscription_status == 1 && $subscription->subscription_id)
 				{
 				?>
-					<input type="button" class="btn btn-danger" value="<?php echo JText::_('OSM_CANCEL_SUBSCRIPTION'); ?>" onclick="cancelSubscription('<?php echo $subscription->subscription_id;  ?>');" />
+					<a class="btn btn-danger osm-btn-cancel-subscription" href="javascript:cancelSubscription('<?php echo $subscription->subscription_id;  ?>');"><?php echo JText::_('OSM_CANCEL_SUBSCRIPTION'); ?></a>
 				<?php
 				}
 
 				if ($subscription->recurring_cancelled)
 				{
 					echo '<br /><span class="text-error">' . JText::_('OSM_RECURRING_CANCELLED').'</span>';
+				}
+				elseif($subscription->subscription_id)
+				{
+					$subscription = OSMembershipHelperSubscription::getSubscription($subscription->subscription_id);
+					$method = os_payments::getPaymentMethod($subscription->payment_method);
+
+					if (method_exists($method, 'updateCard'))
+					{
+					?>
+						<a href="<?php echo JRoute::_('index.php?option=com_osmembership&view=card&subscription_id=' . $subscription->subscription_id . '&Itemid=' . $this->Itemid); ?>" class="btn btn-primary osm-btn-update-card"><?php echo JText::_('OSM_UPDATE_CARD');  ?></a>
+					<?php
+					}
 				}
 				?>
 			</td>

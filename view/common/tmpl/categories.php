@@ -1,4 +1,14 @@
 <?php
+/**
+ * @package        Joomla
+ * @subpackage     Membership Pro
+ * @author         Tuan Pham Ngoc
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
+ * @license        GNU/GPL, see LICENSE.php
+ */
+
+defined('_JEXEC') or die;
+
 for ($i = 0 , $n = count($items) ; $i < $n ; $i++)
 {
 	$item = $items[$i] ;

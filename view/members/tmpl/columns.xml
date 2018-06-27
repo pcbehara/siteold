@@ -13,6 +13,15 @@
         <fields name="params">
             <fieldset name="basic">
                 <field name="number_columns" type="text" label="Number Columns" default="3" />
+                <field name="exclude_plan_ids" type="text" label="Exclude Plan IDs" description="Enter ID of the plans you don't want to display members, comma separated. For example 1,2,4" default="" />
+                <field name="show_link_to_detail" type="list" label="Show link to member detail page" default="0">
+                    <option value="0">No</option>
+                    <option value="1">Yes</option>
+                </field>
+                <field name="show_membership_id" type="list" label="Show Membership ID" default="0">
+                    <option value="0">No</option>
+                    <option value="1">Yes</option>
+                </field>
                 <field name="show_avatar" type="list" label="Show Profile Avatar" default="0">
                     <option value="0">No</option>
                     <option value="1">Yes</option>
@@ -24,6 +33,16 @@
                 <field name="show_subscription_date" type="list" label="Show Subscription Date" default="1">
                     <option value="0">No</option>
                     <option value="1">Yes</option>
+                </field>
+                <field name="show_subscription_end_date" type="list" label="Show Subscription End Date" default="0">
+                    <option value="0">No</option>
+                    <option value="1">Yes</option>
+                </field>
+                <field name="subscription_status" type="list" label="Subscription Status" default="">
+                    <option value="">All</option>
+                    <option value="0">Pending</option>
+                    <option value="1">Active</option>
+                    <option value="2">Expired</option>
                 </field>
                 <field name="sort_by" type="list" label="Sort By" default="tbl.created_date">
                     <option value="first_name">First Name</option>
@@ -39,11 +58,13 @@
                     <option value="fax">Fax</option>
                     <option value="email">Email</option>
                     <option value="tbl.created_date">Register Date</option>
+                    <option value="tbl.membership_id">Membership ID</option>
                 </field>
                 <field name="sort_direction" type="list" label="Sort Direction" default="DESC">
                     <option value="ASC">ASC</option>
                     <option value="DESC">DESC</option>
                 </field>
+
             </fieldset>
         </fields>
 	</layout>		

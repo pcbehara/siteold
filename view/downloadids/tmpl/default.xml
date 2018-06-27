@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+    <layout title="Download Ids">
+        <message>
+            Displays a list download ids which are available for the current logged in user
+        </message>
+    </layout>
+    <state>
+        <name>Download Ids</name>
+        <description>Displays a list download ids which are available for the current logged in user</description>
+    </state>
+</metadata>

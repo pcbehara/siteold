@@ -3,10 +3,9 @@
  * @package        Joomla
  * @subpackage     OSMembership
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined('_JEXEC') or die;
 
 class OSMembershipControllerRegister extends OSMembershipController
@@ -17,10 +16,13 @@ class OSMembershipControllerRegister extends OSMembershipController
 	public function process_renew_membership()
 	{
 		$renewOptionId = $this->input->getString('renew_option_id', 0);
+
 		if (!$renewOptionId)
 		{
-			$this->app->redirect('index.php', JText::_('OSM_INVALID_RENEW_MEMBERSHIP_OPTION'));
+			$this->app->enqueueMessage(JText::_('OSM_INVALID_RENEW_MEMBERSHIP_OPTION'));
+			$this->app->redirect(JUri::root(), 404);
 		}
+
 		if (strpos($renewOptionId, '|') !== false)
 		{
 			$renewOptionArray = explode('|', $renewOptionId);
@@ -32,6 +34,7 @@ class OSMembershipControllerRegister extends OSMembershipController
 			$this->input->set('id', (int) $renewOptionId);
 			$this->input->set('renew_option_id', OSM_DEFAULT_RENEW_OPTION_ID);
 		}
+
 		$this->input->set('view', 'register');
 		$this->input->set('layout', 'default');
 		$this->display();
@@ -50,6 +53,7 @@ class OSMembershipControllerRegister extends OSMembershipController
 			->where('id=' . $upgradeOptionId);
 		$db->setQuery($query);
 		$upgradeRule = $db->loadObject();
+
 		if ($upgradeRule)
 		{
 			//Set Plan ID
@@ -60,7 +64,8 @@ class OSMembershipControllerRegister extends OSMembershipController
 		}
 		else
 		{
-			$this->app->redirect('index.php', JText::_('OSM_INVALID_UPGRADE_MEMBERSHIP_OPTION'));
+			$this->app->enqueueMessage(JText::_('OSM_INVALID_UPGRADE_MEMBERSHIP_OPTION'));
+			$this->app->redirect(JUri::root(), 404);
 		}
 	}
 
@@ -81,17 +86,26 @@ class OSMembershipControllerRegister extends OSMembershipController
 			$input->post->set('username', $input->post->getString('email'));
 		}
 
+		if (!$input->post->has('first_name'))
+		{
+			$input->post->set('first_name', $input->post->get('email'));
+		}
+
 		// Validate captcha
 		$user = JFactory::getUser();
+
 		if ($config->enable_captcha == 1 || ($config->enable_captcha == 2 && !$user->id))
 		{
 			$captchaPlugin = $this->app->getParams()->get('captcha', JFactory::getConfig()->get('captcha'));
+
 			if (!$captchaPlugin)
 			{
 				// Hardcode to recaptcha, reduce support request
 				$captchaPlugin = 'recaptcha';
 			}
+
 			$plugin = JPluginHelper::getPlugin('captcha', $captchaPlugin);
+
 			if ($plugin)
 			{
 				$res = JCaptcha::getInstance($captchaPlugin)->checkAnswer($input->post->get('recaptcha_response_field', '', 'string'));
@@ -122,7 +136,6 @@ class OSMembershipControllerRegister extends OSMembershipController
 
 		if (count($errors))
 		{
-		
 			// Enqueue the error messages
 			foreach ($errors as $error)
 			{
@@ -142,7 +155,6 @@ class OSMembershipControllerRegister extends OSMembershipController
 
 		try
 		{
-		
 			$data = $input->post->getData();
 			$model->processSubscription($data, $input);
 		}
@@ -194,33 +206,6 @@ class OSMembershipControllerRegister extends OSMembershipController
 		$subscriptionId = $this->input->post->get('subscription_id', '', 'none');
 		$Itemid         = $this->input->getInt('Itemid', 0);
 
-		/* Lee Custom */
-		$user    = JFactory::getUser();
-		$user_id = $user->id;
-		$db    = JFactory::getDbo();
-		$query = $db->getQuery(true);
-		$query->clear()
-				->select('*')
-				->from('#__osmembership_subscribers')
-				->where('user_id = ' . $user_id)
-				->where('plan_id = 7');
-		$db->setQuery($query);
-		$rowSubscriptions = $db->loadObjectList();
-
-		if(count($rowSubscriptions) > 0)
-		{
-			foreach ($rowSubscriptions as $key => $rowSubscription_item) {
-				if(OSMembershipHelper::canCancelSubscription($rowSubscription_item))
-				{
-					$rowSubscription = $rowSubscription_item;
-					break;
-				}	
-			}
-		}
-
-		/* End Lee */	
-
-		/*
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
 		$query->select('*')
@@ -228,13 +213,13 @@ class OSMembershipControllerRegister extends OSMembershipController
 			->where('subscription_id = ' . $db->quote($subscriptionId));
 		$db->setQuery($query);
 		$rowSubscription = $db->loadObject();
-		*/
 
 		if ($rowSubscription && OSMembershipHelper::canCancelSubscription($rowSubscription))
 		{
 			/**@var OSMembershipModelRegister $model * */
 			$model = $this->getModel('Register');
 			$ret   = $model->cancelSubscription($rowSubscription);
+
 			if ($ret)
 			{
 				JFactory::getSession()->set('mp_subscription_id', $rowSubscription->id);
@@ -249,11 +234,10 @@ class OSMembershipControllerRegister extends OSMembershipController
 		else
 		{
 			// Redirect back to user profile page
-			$this->app->redirect('index.php?option=com_osmembership&view=profile&Itemid=' . $Itemid,
-				JText::_('OSM_INVALID_SUBSCRIPTION'));
+			$this->app->enqueueMessage(JText::_('OSM_INVALID_SUBSCRIPTION'));
+			$this->app->redirect('index.php?option=com_osmembership&view=profile&Itemid=' . $Itemid, 404);
 		}
 	}
-
 
 	/**
 	 * Re-calculate subscription fee when subscribers choose a fee option on subscription form
@@ -274,8 +258,16 @@ class OSMembershipControllerRegister extends OSMembershipController
 		$rowFields = OSMembershipHelper::getProfileFields($planId);
 		$data      = $this->input->getData();
 		$form      = new MPFForm($rowFields);
-		$form->setData($data)->bindData(true);
-		$fees = OSMembershipHelper::calculateSubscriptionFee($rowPlan, $form, $data, $config, $this->input->get('payment_method', '', 'none'));
+		$form->setData($data)->bindData(false);
+
+		if (is_callable('OSMembershipHelperOverrideHelper::calculateSubscriptionFee'))
+		{
+			$fees = OSMembershipHelperOverrideHelper::calculateSubscriptionFee($rowPlan, $form, $data, $config, $this->input->get('payment_method', '', 'none'));
+		}
+		else
+		{
+			$fees = OSMembershipHelper::calculateSubscriptionFee($rowPlan, $form, $data, $config, $this->input->get('payment_method', '', 'none'));
+		}
 
 		$amountFields = array(
 			'amount',
@@ -292,7 +284,9 @@ class OSMembershipControllerRegister extends OSMembershipController
 				$fees[$field] = OSMembershipHelper::formatAmount($fees[$field], $config);
 			}
 		}
+
 		echo json_encode($fees);
+
 		$this->app->close();
 	}
 
@@ -304,10 +298,12 @@ class OSMembershipControllerRegister extends OSMembershipController
 		$countryName = $this->input->get('country_name', '', 'string');
 		$fieldName   = $this->input->get('field_name', 'state', 'string');
 		$stateName   = $this->input->get('state_name', '', 'string');
+
 		if (!$countryName)
 		{
 			$countryName = OSMembershipHelper::getConfigValue('default_country');
 		}
+
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
 		$query->clear();
@@ -318,15 +314,16 @@ class OSMembershipControllerRegister extends OSMembershipController
 		$required = $db->loadResult();
 		($required) ? $class = 'validate[required]' : $class = '';
 
-		$query->clear();
-		$query->select('country_id')
+		$query->clear()
+			->select('country_id')
 			->from('#__osmembership_countries')
 			->where('name=' . $db->quote($countryName));
 		$db->setQuery($query);
 		$countryId = $db->loadResult();
+
 		//get state
-		$query->clear();
-		$query->select('state_2_code AS value, state_name AS text')
+		$query->clear()
+			->select('state_2_code AS value, state_name AS text')
 			->from('#__osmembership_states')
 			->where('country_id=' . (int) $countryId)
 			->where('published=1')
@@ -334,6 +331,7 @@ class OSMembershipControllerRegister extends OSMembershipController
 		$db->setQuery($query);
 		$states  = $db->loadObjectList();
 		$options = array();
+
 		if (count($states))
 		{
 			$options[] = JHtml::_('select.option', '', JText::_('OSM_SELECT_STATE'));
@@ -343,7 +341,9 @@ class OSMembershipControllerRegister extends OSMembershipController
 		{
 			$options[] = JHtml::_('select.option', 'N/A', JText::_('OSM_NA'));
 		}
+
 		echo JHtml::_('select.genericlist', $options, $fieldName, ' class="input-large ' . $class . '" id="' . $fieldName . '"', 'value', 'text', $stateName);
+
 		$this->app->close();
 	}
 
@@ -352,17 +352,23 @@ class OSMembershipControllerRegister extends OSMembershipController
 	 */
 	public function get_depend_fields_status()
 	{
-		$db          = JFactory::getDbo();
-		$fieldId     = $this->input->get('field_id', 'int');
-		$fieldValues = $this->input->get('field_values', '', 'none');
-		$fieldValues = explode(',', $fieldValues);
+		$input   = $this->input;
+		$db      = JFactory::getDbo();
+		$fieldId = $this->input->get('field_id', 'int');
+
+		$hiddenFields = array();
+
+		//Get list of depend fields
+		$allFieldIds = OSMembershipHelper::getAllDependencyFields($fieldId);
 
 		//Get list of depend fields
 		$languageSuffix = OSMembershipHelper::getFieldSuffix();
 		$query          = $db->getQuery(true);
 		$query->select('*')
 			->from('#__osmembership_fields')
-			->where('depend_on_field_id=' . $fieldId);
+			->where('id IN (' . implode(',', $allFieldIds) . ')')
+			->where('published=1')
+			->order('ordering');
 
 		if ($languageSuffix)
 		{
@@ -370,73 +376,78 @@ class OSMembershipControllerRegister extends OSMembershipController
 		}
 
 		$db->setQuery($query);
-		$rows       = $db->loadObjectList();
+		$rowFields = $db->loadObjectList();
+
+		$masterFields = array();
+		$fieldsAssoc  = array();
+
+		foreach ($rowFields as $rowField)
+		{
+			if ($rowField->depend_on_field_id)
+			{
+				$masterFields[] = $rowField->depend_on_field_id;
+			}
+
+			$fieldsAssoc[$rowField->id] = $rowField;
+		}
+
+		$masterFields = array_unique($masterFields);
+
+		if (count($masterFields))
+		{
+			foreach ($rowFields as $rowField)
+			{
+				if ($rowField->depend_on_field_id && isset($fieldsAssoc[$rowField->depend_on_field_id]))
+				{
+					// If master field is hided, then children field should be hided, too
+					if (in_array($rowField->depend_on_field_id, $hiddenFields))
+					{
+						$hiddenFields[] = $rowField->id;
+					}
+					else
+					{
+						$fieldName = $fieldsAssoc[$rowField->depend_on_field_id]->name;
+
+						$masterFieldValues = $input->get($fieldName, '', 'none');
+
+						if (is_array($masterFieldValues))
+						{
+							$selectedOptions = $masterFieldValues;
+						}
+						else
+						{
+							$selectedOptions = array($masterFieldValues);
+						}
+
+						$dependOnOptions = explode(',', $rowField->depend_on_options);
+
+						if (!count(array_intersect($selectedOptions, $dependOnOptions)))
+						{
+							$hiddenFields[] = $rowField->id;
+						}
+					}
+				}
+			}
+		}
+
+
 		$showFields = array();
 		$hideFields = array();
-		foreach ($rows as $row)
+
+		foreach ($rowFields as $rowField)
 		{
-			$dependOnOptions = explode(",", $row->depend_on_options);
-			if (count(array_intersect($fieldValues, $dependOnOptions)))
+			if (in_array($rowField->id, $hiddenFields))
 			{
-				$showFields[] = 'field_' . $row->name;
+				$hideFields[] = 'field_' . $rowField->name;
 			}
 			else
 			{
-				$hideFields[] = 'field_' . $row->name;
+				$showFields[] = 'field_' . $rowField->name;
 			}
 		}
+
 		echo json_encode(array('show_fields' => implode(',', $showFields), 'hide_fields' => implode(',', $hideFields)));
-		JFactory::getApplication()->close();
-	}
 
-	/**
-	 * Implement Login function
-	 *
-	 * @throws Exception
-	 */
-	public function login()
-	{
-		JSession::checkToken('post') or jexit(JText::_('JINVALID_TOKEN'));
-
-		$app   = JFactory::getApplication();
-		$input = $app->input;
-
-		$redirectUrl = base64_decode($input->post->get('return', '', 'BASE64'));
-
-		// Get the log in options.
-		$options             = array();
-		$options['remember'] = true;
-
-		// Get the log in credentials.
-		$credentials              = array();
-		$credentials['username']  = $input->post->get('username', '', 'USERNAME');
-		$credentials['password']  = $input->post->get('password', '', 'RAW');
-		$credentials['secretkey'] = '';
-
-		// Perform the log in.
-		if (true === $app->login($credentials, $options))
-		{
-			// Success
-			if ($options['remember'] == true)
-			{
-				$app->setUserState('rememberLogin', true);
-			}
-
-			$session                = JFactory::getSession();
-			$sessionReturnUrl       = $session->get('osm_return_url');
-			$sessionRequiredPlanIds = $session->get('required_plan_ids');
-
-			$activePlans = OSMembershipHelper::getActiveMembershipPlans();
-			if (!empty($sessionReturnUrl) && !empty($sessionRequiredPlanIds) && array_intersect($activePlans, $sessionRequiredPlanIds))
-			{
-				$redirectUrl = $sessionReturnUrl;
-
-				// Clear the old session data
-				$session->clear('osm_return_url');
-				$session->clear('required_plan_ids');
-			}
-		}
-
-		$app->redirect($redirectUrl);
+		$this->app->close();
 	}
 }

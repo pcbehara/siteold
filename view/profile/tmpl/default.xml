@@ -1,8 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <metadata>
-	<layout title="User Profile">
-		<message>
-			Display page allow users to see and change his profile data
-		</message>
-	</layout>				
+    <layout title="User Profile">
+        <message>
+            Display page allow users to see and change his profile data
+        </message>
+    </layout>
+    <fields name="params">
+        <fieldset name="basic">
+            <field
+                    name="show_my_subscriptions"
+                    type="radio"
+                    label="Show my subscriptions tab"
+                    description="If you want to hide my subscriptions tab, set this to No"
+                    class="btn-group btn-group-yesno"
+                    default="1"
+            >
+                <option value="1">JYES</option>
+                <option value="0">JNO</option>
+            </field>
+            <field
+                    name="show_subscriptions_history"
+                    type="radio"
+                    label="Show subscriptions history"
+                    description="If you want to hide subscription history tab on profile page, set this to No"
+                    class="btn-group btn-group-yesno"
+                    default="1"
+            >
+                <option value="1">JYES</option>
+                <option value="0">JNO</option>
+            </field>
+            <field
+                    name="show_renew_options"
+                    type="radio"
+                    label="Show renew membership options"
+                    description="If you want to hide renew membership options on profile page, set this to No"
+                    class="btn-group btn-group-yesno"
+                    default="1"
+            >
+                <option value="1">JYES</option>
+                <option value="0">JNO</option>
+            </field>
+            <field
+                    name="show_upgrade_options"
+                    type="radio"
+                    label="Show upgrade membership options"
+                    description="If you want to hide upgrade membership options on profile page, set this to No"
+                    class="btn-group btn-group-yesno"
+                    default="1"
+            >
+                <option value="1">JYES</option>
+                <option value="0">JNO</option>
+            </field>
+        </fieldset>
+    </fields>
 </metadata>

@@ -3,9 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
+
 // Check to ensure this file is included in Joomla!
 defined('_JEXEC') or die;
 
@@ -18,10 +19,35 @@ class OSMembershipModelMembers extends MPFModelList
 	 */
 	public function __construct($config = array())
 	{
-		$config['search_fields'] = array('tbl.first_name', 'tbl.last_name', 'tbl.email', 'b.title');
-		$config['table']         = '#__osmembership_subscribers';
-		$config['clear_join']    = false;
+		if (!isset($config['search_fields']))
+		{
+			$config['search_fields'] = array('tbl.first_name', 'tbl.last_name', 'tbl.membership_id', 'tbl.email', 'b.title', 'c.username', 'c.name');
+		}
+
+		$config['table']      = '#__osmembership_subscribers';
+		$config['clear_join'] = false;
+
 		parent::__construct($config);
+
+		// Dynamic searchable fields
+		$db    = $this->getDbo();
+		$query = $db->getQuery(true);
+		$query->select('name')
+			->from('#__osmembership_fields')
+			->where('published = 1')
+			->where('is_searchable = 1');
+		$db->setQuery($query);
+		$searchableFields = $db->loadColumn();
+
+		foreach ($searchableFields as $field)
+		{
+			$field = 'tbl.' . $field;
+
+			if (!in_array($field, $this->searchFields))
+			{
+				$this->searchFields[] = $field;
+			}
+		}
 
 		$this->state->insert('id', 'int', 0);
 
@@ -57,7 +83,8 @@ class OSMembershipModelMembers extends MPFModelList
 	 */
 	protected function buildQueryJoins(JDatabaseQuery $query)
 	{
-		$query->leftJoin('#__osmembership_plans AS b  ON tbl.plan_id = b.id');
+		$query->leftJoin('#__osmembership_plans AS b  ON tbl.plan_id = b.id')
+			->leftJoin('#__users AS c ON tbl.user_id = c.id');
 
 		return $this;
 	}
@@ -73,14 +100,32 @@ class OSMembershipModelMembers extends MPFModelList
 	{
 		parent::buildQueryWhere($query);
 
-		$query->where('tbl.is_profile = 1');
+		$query->where('tbl.plan_main_record = 1');
 
 		if ($this->state->id)
 		{
 			$query->where('tbl.plan_id = ' . (int) $this->state->id);
 		}
 
-		$query->where('tbl.id IN (SELECT DISTINCT profile_id FROM #__osmembership_subscribers WHERE published = 1)');
+		$params = JFactory::getApplication()->getParams();
+
+		if (is_numeric($params->get('subscription_status')))
+		{
+			$query->where('tbl.plan_subscription_status = ' . (int) $params->get('subscription_status'));
+		}
+
+		$excludePlanIds = $params->get('exclude_plan_ids');
+
+		if ($excludePlanIds)
+		{
+			$excludePlanIds = \Joomla\Utilities\ArrayHelper::toInteger(explode(',', $excludePlanIds));
+			$excludePlanIds = array_filter($excludePlanIds);
+
+			if (count($excludePlanIds))
+			{
+				$query->where('tbl.plan_id NOT IN (' . implode(',', $excludePlanIds) . ')');
+			}
+		}
 
 		return $this;
 	}
@@ -95,20 +140,24 @@ class OSMembershipModelMembers extends MPFModelList
 		$fieldsData = array();
 		$rows       = $this->data;
 		$fields     = OSMembershipHelper::getProfileFields($this->state->id, false);
+
 		if (count($rows) && count($fields))
 		{
 			$db    = $this->getDbo();
 			$query = $db->getQuery(true);
 			$ids   = array();
+
 			foreach ($rows as $row)
 			{
 				$ids[] = $row->id;
 			}
+
 			$query->select('*')
 				->from('#__osmembership_field_value')
 				->where('subscriber_id IN (' . implode(',', $ids) . ')');
 			$db->setQuery($query);
 			$fieldValues = $db->loadObjectList();
+
 			if (count($fieldValues))
 			{
 				foreach ($fieldValues as $fieldValue)

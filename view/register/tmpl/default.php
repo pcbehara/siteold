@@ -3,7 +3,7 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 defined('_JEXEC') or die ;
@@ -39,6 +39,7 @@ $controlLabelClass = $bootstrapHelper->getClassMapping('control-label');
 $controlsClass     = $bootstrapHelper->getClassMapping('controls');
 
 $fields = $this->form->getFields();
+
 if (isset($fields['state']))
 {
 	$selectedState = $fields['state']->value;
@@ -63,36 +64,34 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 <form method="post" name="os_form" id="os_form" action="<?php echo JRoute::_('index.php?option=com_osmembership&task=register.process_subscription&Itemid='.$this->Itemid, false, $this->config->use_https ? 1 : 0); ?>" enctype="multipart/form-data" autocomplete="off" class="form form-horizontal">
 	<?php
 	echo $this->loadTemplate('form', array('fields' => $fields));
-	if ($this->fees['amount'] > 0 || $this->form->containFeeFields() || $this->plan->recurring_subscription)
+
+	if ((isset($this->fees['amount']) && $this->fees['amount'] > 0) || $this->form->containFeeFields() || $this->plan->recurring_subscription)
 	{
 	?>
 		<h3 class="osm-heading"><?php echo JText::_('OSM_PAYMENT_INFORMATION');?></h3>
-		<?php
+	<?php
 		echo $this->loadTemplate('payment_information');
 		echo $this->loadTemplate('payment_methods');
 	}
-	$articleId =  $this->plan->terms_and_conditions_article_id > 0 ? $this->plan->terms_and_conditions_article_id : $this->config->article_id;
-	if ($articleId > 0)
+
+	$layoutData = [
+		'controlGroupClass' => $controlGroupClass,
+		'controlLabelClass' => $controlLabelClass,
+		'controlsClass'     => $controlsClass,
+	];
+
+	if ($this->config->show_privacy_policy_checkbox || $this->config->show_subscribe_newsletter_checkbox)
+    {
+        echo $this->loadTemplate('gdpr', $layoutData);
+    }
+
+
+    echo $this->loadTemplate('terms_conditions', $layoutData);
+
+	if ($this->showCaptcha) 
 	{
-		$db = JFactory::getDbo();
-		$query = $db->getQuery(true);
-		$query->select('*')
-			->from('#__content')
-			->where('id = '. (int) $articleId);
-		$db->setQuery($query);
-		$rowArticle = $db->loadObject() ;
-		$catId = $rowArticle->catid ;
-		require_once JPATH_ROOT.'/components/com_content/helpers/route.php' ;
 	?>
-	<div class="<?php echo $controlGroupClass ?>">
-		<input type="checkbox" name="accept_term" value="1" class="validate[required] osm_inputbox inputbox" />
-		<strong><?php echo JText::_('OSM_ACCEPT'); ?>&nbsp;<a href="<?php echo JRoute::_(ContentHelperRoute::getArticleRoute($articleId, $catId).'&tmpl=component&format=html'); ?>" class="osm-modal" rel="{handler: 'iframe', size: {x: 700, y: 500}}"><?php echo JText::_('OSM_TERM_AND_CONDITION'); ?></a></strong>
-	</div>
-	<?php
-	}
-	if ($this->config->enable_captcha) {
-	?>
-		<div class="<?php echo $controlGroupClass ?>">
+		<div class="<?php echo $controlGroupClass ?> osm-captcha-container">
 			<label class="<?php echo $controlLabelClass; ?>">
 				<?php echo JText::_('OSM_CAPTCHA'); ?><span class="required">*</span>
 			</label>
@@ -125,6 +124,7 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 	<input type="hidden" name="vat_number_field" value="<?php echo $this->config->eu_vat_number_field ; ?>" />
 	<input type="hidden" name="country_base_tax" value="<?php echo $this->countryBaseTax; ?>" />	
 	<input type="hidden" name="default_country" id="default_country" value="<?php echo $this->config->default_country; ?>" />
+    <input type="hidden" id="card-nonce" name="nonce" />
 	<?php echo JHtml::_( 'form.token' ); ?>
 </form>
 </div>
@@ -153,19 +153,17 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 								if ($this->plan->price > 0)
 								{
 								?>
-									if (typeof stripePublicKey !== 'undefined')
-									{
-										if($('input:radio[name^=payment_method]').length)
-										{
-											var paymentMethod = $('input:radio[name^=payment_method]:checked').val();
-										}
-										else
-										{
-											var paymentMethod = $('input[name^=payment_method]').val();
-										}
+                                    if($('input:radio[name^=payment_method]').length)
+                                    {
+                                        var paymentMethod = $('input:radio[name^=payment_method]:checked').val();
+                                    }
+                                    else
+                                    {
+                                        var paymentMethod = $('input[name^=payment_method]').val();
+                                    }
 
-										if (paymentMethod == 'os_stripe' && $('input[name^=x_card_code]').is(':visible'))
-										{
+                                    if (typeof stripePublicKey !== 'undefined' && paymentMethod.indexOf('os_stripe') == 0 && $('#tr_card_number').is(':visible'))
+									{
 											Stripe.card.createToken({
 												number: $('input[name^=x_card_num]').val(),
 												cvc: $('input[name^=x_card_code]').val(),
@@ -175,8 +173,32 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 											}, stripeResponseHandler);
 
 											return false;
-										}
 									}
+
+                                    // Stripe card element
+                                    if (typeof stripe !== 'undefined' && paymentMethod.indexOf('os_stripe') == 0 && $('#stripe-card-form').is(":visible"))
+                                    {
+                                        stripe.createToken(card).then(function(result) {
+                                            if (result.error) {
+                                                // Inform the customer that there was an error.
+                                                //var errorElement = document.getElementById('card-errors');
+                                                //errorElement.textContent = result.error.message;
+                                                alert(result.error.message);
+                                            } else {
+                                                // Send the token to your server.
+                                                stripeTokenHandler(result.token);
+                                            }
+                                        });
+
+                                        return false;
+                                    }
+
+                                    if (paymentMethod == 'os_squareup' && $('#tr_card_number').is(':visible'))
+                                    {
+                                        sqPaymentForm.requestCardNonce();
+
+                                        return false;
+                                    }
 								<?php
 								}
 							?>
@@ -187,7 +209,7 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 				});
 
 				<?php
-					if ($this->fees['amount'] == 0 && !$this->plan->recurring_subscription)
+					if (isset($this->fees['amount']) && $this->fees['amount'] == 0 && !$this->plan->recurring_subscription)
 					{
 					?>
 						$('.payment_information').css('display', 'none');
@@ -198,7 +220,7 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 					?>
 						// Add css class for vat number field
 						$('input[name^=<?php echo $this->config->eu_vat_number_field   ?>]').addClass('taxable');
-						$('input[name^=<?php echo $this->config->eu_vat_number_field   ?>]').before('<div class="<?php echo $inputPrependClass; ?>"><span class="<?php echo $addOnClass; ?>" id="vat_country_code"><?php echo $this->countryCode; ?></span>');
+						$('input[name^=<?php echo $this->config->eu_vat_number_field   ?>]').before('<div class="<?php echo $inputPrependClass; ?> inline-display"><span class="<?php echo $addOnClass; ?>" id="vat_country_code"><?php echo $this->countryCode; ?></span>');
 						$('input[name^=<?php echo $this->config->eu_vat_number_field   ?>]').after('<span class="invalid" id="vatnumber_validate_msg" style="display: none;"><?php echo ' '.JText::_('OSM_INVALID_VATNUMBER'); ?></span></div>');
 						$('input[name^=<?php echo $this->config->eu_vat_number_field   ?>]').change(function(){
 							calculateSubscriptionFee();
@@ -207,6 +229,23 @@ echo $this->loadTemplate('login', array('fields' => $fields));
 						}
 					?>
 					buildStateField('state', 'country', '<?php echo $selectedState; ?>');
+
+                    if (typeof stripe !== 'undefined')
+                    {
+                        var style = {
+                            base: {
+                                // Add your base input styles here. For example:
+                                fontSize: '16px',
+                                color: "#32325d",
+                            }
+                        };
+
+                        // Create an instance of the card Element.
+                        var card = elements.create('card', {style: style});
+
+                        // Add an instance of the card Element into the `card-element` <div>.
+                        card.mount('#stripe-card-element');
+                    }
 			})
 		});
 		<?php

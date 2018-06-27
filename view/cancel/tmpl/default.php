@@ -6,7 +6,6 @@
  * @copyright      Copyright (C) 2012-2015 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined( '_JEXEC' ) or die ;
 ?>
 <div id="osm-sibscription-cancel" class="osm-container">

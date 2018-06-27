@@ -3,41 +3,56 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
+
 defined('_JEXEC') or die;
+
+use Joomla\Registry\Registry;
+use Joomla\Utilities\ArrayHelper;
+use Joomla\String\StringHelper;
 
 class OSMembershipHelper
 {
 	/**
 	 * Get configuration data and store in config object
 	 *
-	 * @return object
+	 * @return MPFConfig
 	 */
 	public static function getConfig()
 	{
 		static $config;
-		if (!$config)
+
+		if ($config === null)
 		{
-			$db     = JFactory::getDbo();
-			$query  = $db->getQuery(true);
-			$config = new stdClass();
-			$query->select('*')
-				->from('#__osmembership_configs');
-			$db->setQuery($query);
-			$rows = $db->loadObjectList();
-			for ($i = 0, $n = count($rows); $i < $n; $i++)
-			{
-				$row          = $rows[$i];
-				$key          = $row->config_key;
-				$value        = stripslashes($row->config_value);
-				$config->$key = $value;
-			}
+			$config = new MPFConfig('#__osmembership_configs');
 		}
 
 		return $config;
+	}
+
+	/**
+	 * Check if a method is overrided in a child class
+	 *
+	 * @param $class
+	 * @param $method
+	 *
+	 * @return bool
+	 */
+	public static function isMethodOverridden($class, $method)
+	{
+		if (class_exists($class) && method_exists($class, $method))
+		{
+			$reflectionMethod = new ReflectionMethod($class, $method);
+
+			if ($reflectionMethod->getDeclaringClass()->getName() == $class)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -68,6 +83,7 @@ class OSMembershipHelper
 	{
 		//Remove cookie vars from request data
 		$cookieVars = array_keys($_COOKIE);
+
 		if (count($cookieVars))
 		{
 			foreach ($cookieVars as $key)
@@ -78,13 +94,30 @@ class OSMembershipHelper
 				}
 			}
 		}
+
 		if (isset($_REQUEST['start']) && !isset($_REQUEST['limitstart']))
 		{
 			$_REQUEST['limitstart'] = $_REQUEST['start'];
 		}
+
 		if (!isset($_REQUEST['limitstart']))
 		{
 			$_REQUEST['limitstart'] = 0;
+		}
+
+		// Fix PayPal IPN sending to wrong URL
+		if (!empty($_POST['txn_type']) && empty($_REQUEST['task']) && empty($_REQUEST['view']))
+		{
+			$_REQUEST['payment_method'] = 'os_paypal';
+
+			if (!empty($_POST['subscr_id']) || strpos($_POST['txn_type'], 'subscr_'))
+			{
+				$_REQUEST['task'] = 'recurring_payment_confirm';
+			}
+			else
+			{
+				$_REQUEST['task'] = 'payment_confirm';
+			}
 		}
 	}
 
@@ -94,7 +127,7 @@ class OSMembershipHelper
 	 * @param $active
 	 * @param $views
 	 *
-	 * @return JRegistry
+	 * @return Registry
 	 */
 	public static function getViewParams($active, $views)
 	{
@@ -103,31 +136,36 @@ class OSMembershipHelper
 			return $active->params;
 		}
 
-		return new JRegistry();
+		return new Registry();
 	}
 
 	/**
 	 * Get sef of current language
 	 *
-	 * @return mixed
+	 * @param string $tag
+	 *
+	 * @return void
 	 */
-	public static function addLangLinkForAjax()
+	public static function addLangLinkForAjax($tag = '')
 	{
+		$langLink = '';
+
 		if (JLanguageMultilang::isEnabled())
 		{
 			$db    = JFactory::getDbo();
 			$query = $db->getQuery(true);
-			$tag   = JFactory::getLanguage()->getTag();
+
+			if (empty($tag) || $tag == '*')
+			{
+				$tag = JFactory::getLanguage()->getTag();
+			}
+
 			$query->select('`sef`')
 				->from('#__languages')
 				->where('published = 1')
-				->where('lang_code=' . $db->quote($tag));
+				->where('lang_code = ' . $db->quote($tag));
 			$db->setQuery($query, 0, 1);
 			$langLink = '&lang=' . $db->loadResult();
-		}
-		else
-		{
-			$langLink = '';
 		}
 
 		JFactory::getDocument()->addScriptDeclaration(
@@ -170,13 +208,75 @@ class OSMembershipHelper
 	 */
 	public static function canCancelSubscription($row)
 	{
-		$userId = JFactory::getUser()->id;
-		if ($row && $row->user_id == $userId && $userId && !$row->recurring_subscription_cancelled)
+		$user   = JFactory::getUser();
+		$userId = $user->id;
+
+		if ($row
+			&& (($row->user_id == $userId && $userId) || $user->authorise('core.admin', 'com_osmembership'))
+			&& !$row->recurring_subscription_cancelled)
 		{
 			return true;
 		}
 
 		return false;
+	}
+
+	/**
+	 * Get list of custom fields belong to com_users
+	 *
+	 * @return array
+	 */
+	public static function getUserFields()
+	{
+		if (version_compare(JVERSION, '3.7.0', 'ge'))
+		{
+			$db    = JFactory::getDbo();
+			$query = $db->getQuery(true);
+			$query->select('id, name')
+				->from('#__fields')
+				->where($db->quoteName('context') . '=' . $db->quote('com_users.user'))
+				->where($db->quoteName('state') . ' = 1');
+			$db->setQuery($query);
+
+			return $db->loadObjectList('name');
+		}
+
+		return [];
+	}
+
+	/**
+	 * Load payment method object
+	 *
+	 * @param string $name
+	 *
+	 * @return MPFPayment
+	 * @throws Exception
+	 */
+	public static function loadPaymentMethod($name)
+	{
+		$db    = JFactory::getDbo();
+		$query = $db->getQuery(true);
+		$query->select('*')
+			->from('#__osmembership_plugins')
+			->where('published = 1')
+			->where('name = ' . $db->quote($name));
+		$db->setQuery($query);
+		$row = $db->loadObject();
+
+		if ($row && file_exists(JPATH_ROOT . '/components/com_osmembership/plugins/' . $row->name . '.php'))
+		{
+			require_once JPATH_ROOT . '/components/com_osmembership/plugins/' . $name . '.php';
+
+			$params = new Registry($row->params);
+
+			/* @var MPFPayment $method */
+			$method = new $name($params);
+			$method->setTitle($row->title);
+
+			return $method;
+		}
+
+		throw new Exception(sprintf('Payment method %s not found', $name));
 	}
 
 	/**
@@ -196,147 +296,26 @@ class OSMembershipHelper
 			->where('transaction_id = ' . $db->quote($transactionId));
 		$db->setQuery($query);
 		$total = (int) $db->loadResult();
-		if ($total > 0)
-		{
-			return true;
-		}
 
-		return false;
+		return $total > 0;
 	}
 
 	/**
 	 * Helper function to extend subscription of a user when a recurring payment happens
 	 *
-	 * @param $id
+	 * @param int    $id
+	 * @param string $transactionId
+	 * @param string $subscriptionId
 	 *
-	 * @return bool
+	 * @return void
+	 *
+	 * @throws Exception
 	 */
-	public static function extendRecurringSubscription($id, $transactionId = null)
+	public static function extendRecurringSubscription($id, $transactionId = null, $subscriptionId = null)
 	{
-		require_once JPATH_ADMINISTRATOR . '/components/com_osmembership/table/osmembership.php';
-		$row = JTable::getInstance('OsMembership', 'Subscriber');
-		$row->load($id);
-		if (!$row->id)
-		{
-			return false;
-		}
-		$config = OSMembershipHelper::getConfig();
-		$db     = JFactory::getDbo();
-		$query  = $db->getQuery(true);
-		$query->select('*')
-			->from('#__osmembership_plans')
-			->where('id = ' . (int) $row->plan_id);
-		$db->setQuery($query);
-		$rowPlan           = $db->loadObject();
-		$row->payment_made = $row->payment_made + 1;
-		$row->store();
-
-		$process = false;
-
-		if (($rowPlan->trial_duration && $rowPlan->trial_amount == 0) || ($row->payment_made > 1) || ($row->payment_method == 'os_stripe'))
-		{
-			$process = true;
-		}
-
-		if ($process)
-		{
-			$row->id             = 0;
-			$row->created_date   = JFactory::getDate()->toSql();
-			$row->invoice_number = 0;
-			$maxDate             = null;
-			if ($row->user_id > 0)
-			{
-				$query->clear();
-				$query->select('MAX(to_date)')
-					->from('#__osmembership_subscribers')
-					->where('published = 1')
-					->where('user_id = ' . $row->user_id)
-					->where('plan_id =' . $row->plan_id);
-				$db->setQuery($query);
-				$maxDate = $db->loadResult();
-			}
-			if ($maxDate)
-			{
-				$date           = JFactory::getDate($maxDate);
-				$row->from_date = $date->add(new DateInterval('P1D'))->toSql();
-			}
-			else
-			{
-				$date           = JFactory::getDate();
-				$row->from_date = $date->toSql();
-			}
-			$row->to_date = $date->add(new DateInterval('P' . $rowPlan->subscription_length . $rowPlan->subscription_length_unit))->toSql();
-			$row->act     = 'renew';
-
-			$params = new JRegistry($row->params);
-			if ($params->get('regular_amount') > 0)
-			{
-				// From version 1.7.0, we don't need to re-calculate the amount, used the amount stored in database already
-				$row->amount                 = $params->get('regular_amount');
-				$row->discount_amount        = $params->get('regular_discount_amount');
-				$row->tax_amount             = $params->get('regular_tax_amount');
-				$row->payment_processing_fee = $params->get('regular_payment_processing_fee');
-				$row->gross_amount           = $params->get('regular_gross_amount');
-			}
-			else
-			{
-				$row->amount = $rowPlan->price;
-				//Calculate coupon discount
-				if ($row->coupon_id)
-				{
-					$query->clear();
-					$query->select('*')
-						->from('#__osmembership_coupons')
-						->where('id = ' . (int) $row->coupon_id);
-					$db->setQuery($query);
-					$coupon = $db->loadObject();
-					if ($coupon)
-					{
-						if ($coupon->coupon_type == 0)
-						{
-							$row->discount_amount = $row->amount * $coupon->discount / 100;
-						}
-						else
-						{
-							$row->discount_amount = min($coupon->discount, $row->amount);
-						}
-					}
-				}
-				else
-				{
-					$row->discount_amount = 0;
-				}
-
-				// Calculate tax rate
-				$taxRate = OSMembershipHelper::calculateTaxRate($rowPlan->id);
-				if ($taxRate > 0)
-				{
-					$row->tax_amount = round(($row->amount - $row->discount_amount) * $taxRate / 100, 2);
-				}
-				else
-				{
-					$row->tax_amount = 0;
-				}
-				$row->gross_amount = $row->amount - $row->discount_amount + $row->tax_amount;
-			}
-			$row->published       = 1;
-			$row->is_profile      = 0;
-			$row->invoice_number  = 0;
-			$row->subscription_id = '';
-			$row->transaction_id  = $transactionId;
-			$row->store();
-
-			$sql = "INSERT INTO #__osmembership_field_value(field_id, field_value, subscriber_id)"
-				. " SELECT  field_id,field_value, $row->id"
-				. " FROM #__osmembership_field_value WHERE subscriber_id=$id";
-			$db->setQuery($sql);
-			$db->execute();
-
-			JPluginHelper::importPlugin('osmembership');
-			$dispatcher = JEventDispatcher::getInstance();
-			$dispatcher->trigger('onMembershipActive', array($row));
-			OSMembershipHelper::sendEmails($row, $config);
-		}
+		/* @var OSMembershipModelApi $model */
+		$model = MPFModel::getInstance('Api', 'OSMembershipModel', ['ignore_request' => true]);
+		$model->renewRecurringSubscription($id, $subscriptionId, $transactionId);
 	}
 
 	/**
@@ -385,8 +364,8 @@ class OSMembershipHelper
 			}
 		}
 
-		$query->clear();
-		$query->select('COUNT(*)')
+		$query->clear()
+			->select('COUNT(*)')
 			->from('#__osmembership_plans')
 			->where('published = 1')
 			->where('`access` IN (' . implode(',', $user->getAuthorisedViewLevels()) . ')')
@@ -406,41 +385,50 @@ class OSMembershipHelper
 	public static function canSubscribe($row)
 	{
 		$user = JFactory::getUser();
+
 		if ($user->id)
 		{
 			$db    = JFactory::getDbo();
 			$query = $db->getQuery(true);
+
 			if (!$row->enable_renewal)
 			{
-				$query->clear();
-				$query->select('COUNT(*)')
+				$query->clear()
+					->select('COUNT(*)')
 					->from('#__osmembership_subscribers')
 					->where('(email=' . $db->quote($user->email) . ' OR user_id=' . (int) $user->id . ')')
 					->where('plan_id=' . $row->id)
 					->where('published != 0');
 				$db->setQuery($query);
 				$total = (int) $db->loadResult();
+
 				if ($total)
 				{
 					return false;
 				}
 			}
-			$numberDaysBeforeRenewal = (int) self::getConfigValue('number_days_before_renewal');
+
+			$config = OSMembershipHelper::getConfig();
+
+			$numberDaysBeforeRenewal = (int) $config->number_days_before_renewal;
+
 			if ($numberDaysBeforeRenewal)
 			{
 				//Get max date
-				$query->clear();
-				$query->select('MAX(to_date)')
+				$query->clear()
+					->select('MAX(to_date)')
 					->from('#__osmembership_subscribers')
 					->where('user_id=' . (int) $user->id . ' AND plan_id=' . $row->id . ' AND (published=1 OR (published = 0 AND payment_method LIKE "os_offline%"))');
 				$db->setQuery($query);
 				$maxDate = $db->loadResult();
+
 				if ($maxDate)
 				{
 					$expiredDate = JFactory::getDate($maxDate);
 					$todayDate   = JFactory::getDate();
 					$diff        = $expiredDate->diff($todayDate);
 					$numberDays  = $diff->days;
+
 					if ($numberDays > $numberDaysBeforeRenewal)
 					{
 						return false;
@@ -450,6 +438,30 @@ class OSMembershipHelper
 		}
 
 		return true;
+	}
+
+	/*
+	 * Check to see whether the current user can browse users list
+	 */
+	public static function canBrowseUsersList()
+	{
+		$user = JFactory::getUser();
+
+		if ($user->authorise('membershippro.subscriptions', 'com_osmembership'))
+		{
+			return true;
+		}
+
+		$config = OSMembershipHelper::getConfig();
+
+		if (!$config->enable_select_existing_users)
+		{
+			return false;
+		}
+
+		$canManage = OSMembershipHelper::getManageGroupMemberPermission();
+
+		return $canManage > 0;
 	}
 
 	/**
@@ -463,16 +475,18 @@ class OSMembershipHelper
 	{
 		if (!JPluginHelper::isEnabled('osmembership', 'groupmembership'))
 		{
+			JFactory::getApplication()->enqueueMessage('Please enable plugin Membership Pro - Group Membership Plugin to use this feature', 'notice');
+
 			return 0;
 		}
 
 		$userId = JFactory::getUser()->id;
+
 		if (!$userId)
 		{
 			return 0;
 		}
 
-		JTable::addIncludePath(JPATH_ADMINISTRATOR . '/components/com_osmembership/table');
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
 
@@ -483,6 +497,7 @@ class OSMembershipHelper
 			->where('group_admin_id > 0');
 		$db->setQuery($query);
 		$total = $db->loadResult();
+
 		if ($total)
 		{
 			return 0;
@@ -497,11 +512,12 @@ class OSMembershipHelper
 			$planId = $planIds[$i];
 			$rowPlan->load($planId);
 			$numberGroupMembers = $rowPlan->number_group_members;
+
 			if ($numberGroupMembers > 0)
 			{
 				$managePlanIds[] = $planId;
-				$query->clear();
-				$query->select('COUNT(*)')
+				$query->clear()
+					->select('COUNT(*)')
 					->from('#__osmembership_subscribers')
 					->where('group_admin_id = ' . $userId);
 				$db->setQuery($query);
@@ -528,6 +544,63 @@ class OSMembershipHelper
 	}
 
 	/**
+	 * Method to check to see whether the current user can access to the current view
+	 *
+	 * @param string $view
+	 *
+	 * @return bool
+	 */
+	public static function canAccessThisView($view)
+	{
+		$user   = JFactory::getUser();
+		$access = true;
+
+		switch ($view)
+		{
+			case 'categories':
+			case 'category':
+				$access = $user->authorise('membershippro.categories', 'com_osmembership');
+				break;
+			case 'plans':
+			case 'plan':
+				$access = $user->authorise('membershippro.plans', 'com_osmembership');
+				break;
+			case 'subscriptions':
+			case 'subscription':
+			case 'reports':
+			case 'subscribers':
+			case 'subscriber':
+			case 'groupmembers':
+			case 'groupmember':
+			case 'import':
+				$access = $user->authorise('membershippro.subscriptions', 'com_osmembership');
+				break;
+			case 'configuration':
+			case 'plugins':
+			case 'plugin':
+			case 'taxes':
+			case 'tax':
+			case 'countries':
+			case 'country':
+			case 'states':
+			case 'state':
+			case 'message':
+				$access = $user->authorise('core.admin', 'com_osmembership');
+				break;
+			case 'fields':
+			case 'field':
+				$access = $user->authorise('membershippro.fields', 'com_osmembership');
+				break;
+			case 'coupons':
+			case 'coupon':
+				$access = $user->authorise('membershippro.coupons', 'com_osmembership');
+				break;
+		}
+
+		return $access;
+	}
+
+	/**
 	 * Try to fix ProfileID for user if it was lost for some reasons - for example, admin delete
 	 *
 	 * @param $userId
@@ -544,11 +617,12 @@ class OSMembershipHelper
 			->order('id DESC');
 		$db->setQuery($query);
 		$id = (int) $db->loadResult();
+
 		if ($id)
 		{
 			// Make this record as profile ID
-			$query->clear();
-			$query->update('#__osmembership_subscribers')
+			$query->clear()
+				->update('#__osmembership_subscribers')
 				->set('is_profile = 1')
 				->set('profile_id =' . $id)
 				->where('id = ' . $id);
@@ -556,8 +630,8 @@ class OSMembershipHelper
 			$db->execute();
 
 			// Mark all other records of this user has profile_id = ID of this record
-			$query->clear();
-			$query->update('#__osmembership_subscribers')
+			$query->clear()
+				->update('#__osmembership_subscribers')
 				->set('profile_id = ' . $id)
 				->where('user_id = ' . $userId)
 				->where('id != ' . $id);
@@ -566,10 +640,8 @@ class OSMembershipHelper
 
 			return true;
 		}
-		else
-		{
-			return false;
-		}
+
+		return false;
 	}
 
 	/**
@@ -582,11 +654,13 @@ class OSMembershipHelper
 		$db             = JFactory::getDbo();
 		$fields         = array_keys($db->getTableColumns('#__osmembership_plans'));
 		$extraLanguages = self::getLanguages();
+
 		if (count($extraLanguages))
 		{
 			foreach ($extraLanguages as $extraLanguage)
 			{
 				$prefix = $extraLanguage->sef;
+
 				if (!in_array('alias_' . $prefix, $fields) || !in_array('user_renew_email_subject_' . $prefix, $fields))
 				{
 					return false;
@@ -607,7 +681,16 @@ class OSMembershipHelper
 	 */
 	public static function needToCreateInvoice($row)
 	{
-		if ($row->amount > 0 || $row->gross_amount > 0)
+		if (OSMembershipHelper::isMethodOverridden('OSMembershipHelperOverrideHelper', 'needToCreateInvoice'))
+		{
+			return OSMembershipHelperOverrideHelper::needToCreateInvoice($row);
+		}
+
+		$config    = OSMembershipHelper::getConfig();
+		$published = (int) $row->published;
+
+		if (($row->amount > 0 || $row->gross_amount > 0)
+			&& ($published === 1 || !$config->generated_invoice_for_paid_subscription_only))
 		{
 			return true;
 		}
@@ -625,17 +708,39 @@ class OSMembershipHelper
 	 */
 	public static function convertAmountToUSD($amount, $currency)
 	{
+		if (OSMembershipHelper::isMethodOverridden('OSMembershipHelperOverrideHelper', 'convertAmountToUSD'))
+		{
+			return OSMembershipHelperOverrideHelper::convertAmountToUSD($amount, $currency);
+		}
+
 		static $rate = null;
 
 		if ($rate === null)
 		{
+			$url = sprintf('https://www.google.com/search?q=1+%s+to+%s', 'USD', $currency);
+
+			$headers = [
+				'Accept'     => 'text/html',
+				'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:21.0) Gecko/20100101 Firefox/21.0',
+			];
+
 			$http     = JHttpFactory::getHttp();
-			$url      = 'http://download.finance.yahoo.com/d/quotes.csv?e=.csv&f=sl1d1t1&s=USD' . $currency . '=X';
-			$response = $http->get($url);
-			if ($response->code == 200)
+			$response = $http->get($url, $headers);
+
+			if (302 == $response->code && isset($response->headers['Location']))
 			{
-				$currencyData = explode(',', $response->body);
-				$rate         = floatval($currencyData[1]);
+				$response = $http->get($response->headers['Location'], $headers);
+			}
+
+			$body = $response->body;
+
+			try
+			{
+				$rate = static::buildExchangeRate($body);
+			}
+			catch (Exception $e)
+			{
+
 			}
 		}
 
@@ -648,29 +753,100 @@ class OSMembershipHelper
 	}
 
 	/**
+	 * Builds an exchange rate from the response content.
+	 *
+	 * @param string $content
+	 *
+	 * @return float
+	 *
+	 * @throws \Exception
+	 */
+	protected static function buildExchangeRate($content)
+	{
+		$document = new \DOMDocument();
+
+		if (false === @$document->loadHTML('<?xml encoding="utf-8" ?>' . $content))
+		{
+			throw new Exception('The page content is not loadable');
+		}
+
+		$xpath = new \DOMXPath($document);
+		$nodes = $xpath->query('//span[@id="knowledge-currency__tgt-amount"]');
+
+		if (1 !== $nodes->length)
+		{
+			$nodes = $xpath->query('//div[@class="vk_ans vk_bk" or @class="dDoNo vk_bk"]');
+		}
+
+		if (1 !== $nodes->length)
+		{
+			throw new Exception('The currency is not supported or Google changed the response format');
+		}
+
+		$nodeContent = $nodes->item(0)->textContent;
+
+		// Beware of "3 417.36111 Colombian pesos", with a non breaking space
+		$bid = strtr($nodeContent, ["\xc2\xa0" => '']);
+
+		if (false !== strpos($bid, ' '))
+		{
+			$bid = strstr($bid, ' ', true);
+		}
+		// Does it have thousands separator?
+		if (strpos($bid, ',') && strpos($bid, '.'))
+		{
+			$bid = str_replace(',', '', $bid);
+		}
+
+		if (!is_numeric($bid))
+		{
+			throw new Exception('The currency is not supported or Google changed the response format');
+		}
+
+		return $bid;
+	}
+
+	/**
+	 * Check to see whether the return value is a valid date format
+	 *
+	 * @param $value
+	 *
+	 * @return bool
+	 */
+	public static function isValidDate($value)
+	{
+		// basic date format yyyy-mm-dd
+		$expr = '/^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})$/D';
+
+		return preg_match($expr, $value, $match) && checkdate($match[2], $match[3], $match[1]);
+	}
+
+	/**
 	 * Calculate subscription fees based on input parameter
 	 *
-	 * @param JTable  $rowPlan the object which contains information about the plan
-	 * @param MPFForm $form    The form object which is used to calculate extra fee
-	 * @param array   $data    The post data
-	 * @param Object  $config
-	 * @param string  $paymentMethod
+	 * @param OSMembershipTablePlan $rowPlan the object which contains information about the plan
+	 * @param MPFForm               $form    The form object which is used to calculate extra fee
+	 * @param array                 $data    The post data
+	 * @param MPFConfig             $config
+	 * @param string                $paymentMethod
 	 *
 	 * @return array
 	 */
 	public static function calculateSubscriptionFee($rowPlan, $form, $data, $config, $paymentMethod = null)
 	{
-		$db    = JFactory::getDbo();
-		$query = $db->getQuery(true);
+		$db       = JFactory::getDbo();
+		$query    = $db->getQuery(true);
+		$nullDate = $db->getNullDate();
 
 		$fees           = array();
-		$feeAmount      = $form->calculateFee();
+		$feeAmount      = $form->calculateFee(array('PLAN_PRICE' => $rowPlan->price));
 		$couponValid    = 1;
 		$vatNumberValid = 1;
 		$vatNumber      = '';
 		$country        = isset($data['country']) ? $data['country'] : $config->default_country;
 		$state          = isset($data['state']) ? $data['state'] : '';
 		$countryCode    = self::getCountryCode($country);
+
 		if ($countryCode == 'GR')
 		{
 			$countryCode = 'EL';
@@ -678,33 +854,41 @@ class OSMembershipHelper
 
 		$paymentFeeAmount  = 0;
 		$paymentFeePercent = 0;
+
 		if ($paymentMethod)
 		{
 			$method            = os_payments::loadPaymentMethod($paymentMethod);
-			$params            = new JRegistry($method->params);
+			$params            = new Registry($method->params);
 			$paymentFeeAmount  = (float) $params->get('payment_fee_amount');
 			$paymentFeePercent = (float) $params->get('payment_fee_percent');
 		}
 
 		$couponCode = isset($data['coupon_code']) ? $data['coupon_code'] : '';
+
 		if ($couponCode)
 		{
-			$planId   = $rowPlan->id;
-			$nullDate = $db->getNullDate();
+			$planId = $rowPlan->id;
+
 			$query->clear()
 				->select('*')
 				->from('#__osmembership_coupons')
-				->where('published=1')
-				->where('code="' . $couponCode . '"')
-				->where('(valid_from="' . $nullDate . '" OR DATE(valid_from) <= CURDATE())')
-				->where('(valid_to="' . $nullDate . '" OR DATE(valid_to) >= CURDATE())')
+				->where('published = 1')
+				->where($db->quoteName('access') . ' IN (' . implode(',', JFactory::getUser()->getAuthorisedViewLevels()) . ')')
+				->where('code = ' . $db->quote($couponCode))
+				->where('(valid_from = ' . $db->quote($nullDate) . ' OR DATE(valid_from) <= CURDATE())')
+				->where('(valid_to = ' . $db->quote($nullDate) . ' OR DATE(valid_to) >= CURDATE())')
 				->where('(times = 0 OR times > used)')
-				->where('(plan_id=0 OR plan_id=' . $planId . ')');
+				->where('(plan_id = 0 OR id IN (SELECT coupon_id FROM #__osmembership_coupon_plans WHERE plan_id = ' . $planId . '))');
 			$db->setQuery($query);
 			$coupon = $db->loadObject();
+
 			if (!$coupon)
 			{
 				$couponValid = 0;
+			}
+			else
+			{
+				$fees['coupon_id'] = $coupon->id;
 			}
 		}
 
@@ -712,10 +896,12 @@ class OSMembershipHelper
 		if (!empty($config->eu_vat_number_field) && isset($data[$config->eu_vat_number_field]))
 		{
 			$vatNumber = $data[$config->eu_vat_number_field];
+
 			if ($vatNumber)
 			{
 				// If users doesn't enter the country code into the VAT Number, append the code
 				$firstTwoCharacters = substr($vatNumber, 0, 2);
+
 				if (strtoupper($firstTwoCharacters) != $countryCode)
 				{
 					$vatNumber = $countryCode . $vatNumber;
@@ -726,6 +912,7 @@ class OSMembershipHelper
 		if ($vatNumber)
 		{
 			$valid = OSMembershipHelperEuvat::validateEUVATNumber($vatNumber);
+
 			if ($valid)
 			{
 				$taxRate = self::calculateTaxRate($rowPlan->id, $country, $state, 1);
@@ -741,15 +928,28 @@ class OSMembershipHelper
 			$taxRate = self::calculateTaxRate($rowPlan->id, $country, $state, 0);
 		}
 
+		$action = $data['act'];
+
+		if ($action != 'renew')
+		{
+			$setupFee = $rowPlan->setup_fee;
+		}
+		else
+		{
+			$setupFee = 0;
+		}
+
+		$fees['setup_fee'] = $setupFee;
+
 		if (!$rowPlan->recurring_subscription)
 		{
-			$action         = $data['act'];
 			$discountAmount = 0;
 			$taxAmount      = 0;
 
 			if ($action == 'renew')
 			{
 				$renewOptionId = (int) $data['renew_option_id'];
+
 				if ($renewOptionId == OSM_DEFAULT_RENEW_OPTION_ID)
 				{
 					$amount = $rowPlan->price;
@@ -763,25 +963,80 @@ class OSMembershipHelper
 					$db->setQuery($query);
 					$amount = $db->loadResult();
 				}
+
+				// Get renewal discount
+				$renewalDiscount = OSMembershipHelperSubscription::getRenewalDiscount((int) JFactory::getUser()->id, $rowPlan->id);
+
+				if ($renewalDiscount)
+				{
+					if ($renewalDiscount->discount_type == 0)
+					{
+						$amount = round($amount * (1 - $renewalDiscount->discount_amount / 100), 2);
+					}
+					else
+					{
+						$amount = $amount - $renewalDiscount->discount_amount;
+					}
+				}
 			}
 			elseif ($action == 'upgrade')
 			{
 				$query->clear()
-					->select('price')
+					->select('*')
 					->from('#__osmembership_upgraderules')
 					->where('id = ' . (int) $data['upgrade_option_id']);
 				$db->setQuery($query);
-				$amount = $db->loadResult();
+				$upgradeOption = $db->loadObject();
+				$amount        = $upgradeOption->price;
+
+				if ($upgradeOption->upgrade_prorated == 2)
+				{
+					$amount -= OSMembershipHelperSubscription::calculateProratedUpgradePrice($upgradeOption, (int) JFactory::getUser()->id);
+				}
 			}
 			else
 			{
-				if ($rowPlan->recurring_subscription && $rowPlan->trial_duration)
+				$amount = $rowPlan->price;
+
+				if ($rowPlan->expired_date && $rowPlan->expired_date != $nullDate && $rowPlan->prorated_signup_cost)
 				{
-					$amount = $rowPlan->trial_amount;
-				}
-				else
-				{
-					$amount = $rowPlan->price;
+					$expiredDate = JFactory::getDate($rowPlan->expired_date, JFactory::getConfig()->get('offset'));
+					$date        = JFactory::getDate('now', JFactory::getConfig()->get('offset'));
+					$expiredDate->setTime(23, 59, 59);
+					$date->setTime(23, 59, 59);
+
+					if ($rowPlan->subscription_length_unit == 'Y')
+					{
+						$subscriptionLengthYears = $rowPlan->subscription_length;
+					}
+					else
+					{
+						$subscriptionLengthYears = 1;
+					}
+
+					$expiredDate->setDate($date->year, $expiredDate->month, $expiredDate->day);
+
+					if ($date > $expiredDate)
+					{
+						$expiredDate->modify("+ $subscriptionLengthYears years");
+					}
+					else
+					{
+						$expiredDate->modify("+ " . ($subscriptionLengthYears - 1) . " years");
+					}
+
+					$diff = $expiredDate->diff($date, true);
+
+					if ($rowPlan->prorated_signup_cost == 1)
+					{
+						$numberDays = $subscriptionLengthYears * 365;
+						$amount     = $amount * ($diff->days + 1) / $numberDays;
+					}
+					elseif ($rowPlan->prorated_signup_cost == 2)
+					{
+						$numberMonths = $subscriptionLengthYears * 12;
+						$amount       = $amount * ($diff->y * 12 + $diff->m + 1) / $numberMonths;
+					}
 				}
 			}
 
@@ -791,27 +1046,28 @@ class OSMembershipHelper
 			{
 				if ($coupon->coupon_type == 0)
 				{
-					$discountAmount = $amount * $coupon->discount / 100;
+					$discountAmount = ($amount + $setupFee) * $coupon->discount / 100;
 				}
 				else
 				{
-					$discountAmount = min($coupon->discount, $amount);
+					$discountAmount = min($coupon->discount, $amount + $setupFee);
 				}
 			}
 
 			if ($taxRate > 0)
 			{
-				$taxAmount = round(($amount - $discountAmount) * $taxRate / 100, 2);
+				$taxAmount = round(($amount + $setupFee - $discountAmount) * $taxRate / 100, 2);
 			}
 
-			$grossAmount = $amount - $discountAmount + $taxAmount;
+			$grossAmount                    = $setupFee + $amount - $discountAmount + $taxAmount;
 			$fees['payment_processing_fee'] = 0;
+
 			if ($paymentFeeAmount > 0 || $paymentFeePercent > 0)
 			{
 				if ($grossAmount > 0)
 				{
 					$fees['payment_processing_fee'] = round($paymentFeeAmount + $grossAmount * $paymentFeePercent / 100, 2);
-					$grossAmount += $fees['payment_processing_fee'];
+					$grossAmount                    += $fees['payment_processing_fee'];
 				}
 			}
 
@@ -833,7 +1089,26 @@ class OSMembershipHelper
 		}
 		else
 		{
-			$regularAmount         = $rowPlan->price + $feeAmount;
+			if ($action == 'upgrade')
+			{
+				$query->clear()
+					->select('*')
+					->from('#__osmembership_upgraderules')
+					->where('id = ' . (int) $data['upgrade_option_id']);
+				$db->setQuery($query);
+				$upgradeOption = $db->loadObject();
+				$regularAmount = $upgradeOption->price + $feeAmount;
+
+				if ($upgradeOption->upgrade_prorated == 2)
+				{
+					$regularAmount -= OSMembershipHelperSubscription::calculateProratedUpgradePrice($upgradeOption, (int) JFactory::getUser()->id);
+				}
+			}
+			else
+			{
+				$regularAmount = $rowPlan->price + $feeAmount;
+			}
+
 			$regularDiscountAmount = 0;
 			$regularTaxAmount      = 0;
 			$trialDiscountAmount   = 0;
@@ -842,20 +1117,24 @@ class OSMembershipHelper
 			$trialDuration         = 0;
 			$trialDurationUnit     = '';
 
-			if ($rowPlan->trial_duration || (!empty($coupon) && $coupon->apply_for == 1))
+			if ($rowPlan->trial_duration || $setupFee > 0 || (!empty($coupon) && $coupon->apply_for == 1))
 			{
 				// There will be trial duration
 				if ($rowPlan->trial_duration)
 				{
-					$trialAmount = $rowPlan->trial_amount + $feeAmount;
-
+					$trialAmount       = $rowPlan->trial_amount + $feeAmount + $setupFee;
 					$trialDuration     = $rowPlan->trial_duration;
 					$trialDurationUnit = $rowPlan->trial_duration_unit;
 				}
+				elseif ($setupFee > 0)
+				{
+					$trialAmount       = $regularAmount + $setupFee;
+					$trialDuration     = $rowPlan->subscription_length;
+					$trialDurationUnit = $rowPlan->subscription_length_unit;
+				}
 				else
 				{
-					$trialAmount = $regularAmount;
-
+					$trialAmount       = $regularAmount + $setupFee;
 					$trialDuration     = $rowPlan->subscription_length;
 					$trialDurationUnit = $rowPlan->subscription_length_unit;
 				}
@@ -866,6 +1145,7 @@ class OSMembershipHelper
 				if ($coupon->coupon_type == 0)
 				{
 					$trialDiscountAmount = $trialAmount * $coupon->discount / 100;
+
 					if ($coupon->apply_for == 0)
 					{
 						$regularDiscountAmount = $regularAmount * $coupon->discount / 100;
@@ -874,6 +1154,7 @@ class OSMembershipHelper
 				else
 				{
 					$trialDiscountAmount = min($coupon->discount, $trialAmount);
+
 					if ($coupon->apply_for == 0)
 					{
 						$regularDiscountAmount = min($coupon->discount, $regularAmount);
@@ -910,7 +1191,7 @@ class OSMembershipHelper
 					$fees['regular_payment_processing_fee'] = 0;
 				}
 
-				$trialGrossAmount += $fees['trial_payment_processing_fee'];
+				$trialGrossAmount   += $fees['trial_payment_processing_fee'];
 				$regularGrossAmount += $fees['regular_payment_processing_fee'];
 			}
 			else
@@ -940,6 +1221,7 @@ class OSMembershipHelper
 			}
 
 			$replaces = array();
+
 			switch ($rowPlan->subscription_length_unit)
 			{
 				case 'D':
@@ -962,6 +1244,7 @@ class OSMembershipHelper
 			$replaces['[REGULAR_AMOUNT]']   = OSMembershipHelper::formatCurrency($fees['regular_gross_amount'], $config);
 			$replaces['[REGULAR_DURATION]'] = $regularDuration;
 			$replaces['[NUMBER_PAYMENTS]']  = $rowPlan->number_payments;
+
 			if ($trialDuration > 0)
 			{
 				switch ($trialDurationUnit)
@@ -988,6 +1271,7 @@ class OSMembershipHelper
 				if ($fees['trial_gross_amount'] > 0)
 				{
 					$replaces['[TRIAL_AMOUNT]'] = OSMembershipHelper::formatCurrency($fees['trial_gross_amount'], $config);
+
 					if ($rowPlan->number_payments > 0)
 					{
 						$paymentTerms = JText::_('OSM_TERMS_TRIAL_AMOUNT_NUMBER_PAYMENTS');
@@ -1042,6 +1326,8 @@ class OSMembershipHelper
 			$fees['show_vat_number_field'] = 0;
 		}
 
+		$fees['tax_rate'] = $taxRate;
+
 		return $fees;
 	}
 
@@ -1061,6 +1347,7 @@ class OSMembershipHelper
 		$db->setQuery($query);
 		$countries       = $db->loadColumn();
 		$numberCountries = count($countries);
+
 		if ($numberCountries > 1)
 		{
 			return true;
@@ -1107,10 +1394,12 @@ class OSMembershipHelper
 	{
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
+
 		if (empty($country))
 		{
 			$country = self::getConfigValue('default_country');
 		}
+
 		$query->select('rate')
 			->from('#__osmembership_taxes')
 			->where('published = 1')
@@ -1133,8 +1422,10 @@ class OSMembershipHelper
 		{
 			$query->where('vies = ' . (int) $vies);
 		}
+
 		$db->setQuery($query);
 		$rowRate = $db->loadObject();
+
 		if ($rowRate)
 		{
 			return $rowRate->rate;
@@ -1142,8 +1433,8 @@ class OSMembershipHelper
 		else
 		{
 			// Try to find a record with all plans
-			$query->clear();
-			$query->select('rate')
+			$query->clear()
+				->select('rate')
 				->from('#__osmembership_taxes')
 				->where('published = 1')
 				->where('plan_id = 0')
@@ -1165,8 +1456,10 @@ class OSMembershipHelper
 			{
 				$query->where('vies = ' . (int) $vies);
 			}
+
 			$db->setQuery($query);
 			$rowRate = $db->loadObject();
+
 			if ($rowRate)
 			{
 				return $rowRate->rate;
@@ -1184,23 +1477,31 @@ class OSMembershipHelper
 	 * @param string $country
 	 * @param string $state
 	 * @param int    $vies
+	 * @param bool   $useDefaultCountryIfEmpty
 	 *
 	 * @return int
 	 */
-	public static function calculateMaxTaxRate($planId, $country = '', $state = '', $vies = 2)
+	public static function calculateMaxTaxRate($planId, $country = '', $state = '', $vies = 2, $useDefaultCountryIfEmpty = true)
 	{
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
-		if (empty($country))
+
+		if (empty($country) && $useDefaultCountryIfEmpty)
 		{
 			$country = self::getConfigValue('default_country');
 		}
+
 		$query->select('rate')
 			->from('#__osmembership_taxes')
 			->where('published = 1')
 			->where('plan_id = ' . $planId)
-			->where('(country = "" OR country = ' . $db->quote($country) . ')')
 			->order('`rate` DESC');
+
+		if ($country)
+		{
+			$query->where('(country = "" OR country = ' . $db->quote($country) . ')')
+				->order('country DESC');
+		}
 
 		if ($state)
 		{
@@ -1208,14 +1509,14 @@ class OSMembershipHelper
 				->order('`state` DESC');
 		}
 
-		$query->order('country DESC');
-
 		if ($vies != 2)
 		{
 			$query->where('vies = ' . (int) $vies);
 		}
+
 		$db->setQuery($query);
 		$rowRate = $db->loadObject();
+
 		if ($rowRate)
 		{
 			return $rowRate->rate;
@@ -1223,13 +1524,18 @@ class OSMembershipHelper
 		else
 		{
 			// Try to find a record with all plans
-			$query->clear();
-			$query->select('rate')
+			$query->clear()
+				->select('rate')
 				->from('#__osmembership_taxes')
 				->where('published = 1')
 				->where('plan_id = 0')
-				->where('(country = "" OR country = ' . $db->quote($country) . ')')
 				->order('`rate` DESC');
+
+			if ($country)
+			{
+				$query->where('(country = "" OR country = ' . $db->quote($country) . ')')
+					->order('country DESC');
+			}
 
 			if ($state)
 			{
@@ -1237,14 +1543,14 @@ class OSMembershipHelper
 					->order('`state` DESC');
 			}
 
-			$query->order('country DESC');
-
 			if ($vies != 2)
 			{
 				$query->where('vies = ' . (int) $vies);
 			}
+
 			$db->setQuery($query);
 			$rowRate = $db->loadObject();
+
 			if ($rowRate)
 			{
 				return $rowRate->rate;
@@ -1266,21 +1572,28 @@ class OSMembershipHelper
 	 */
 	public static function getProfileFields($planId, $loadCoreFields = true, $language = null, $action = null)
 	{
-		$planId      = (int) $planId;
+		$user        = JFactory::getUser();
 		$db          = JFactory::getDbo();
 		$query       = $db->getQuery(true);
+		$planId      = (int) $planId;
 		$fieldSuffix = self::getFieldSuffix($language);
 		$query->select('*')
 			->from('#__osmembership_fields')
 			->where('published = 1')
-			->where('`access` IN (' . implode(',', JFactory::getUser()->getAuthorisedViewLevels()) . ')')
 			->where('(plan_id=0 OR id IN (SELECT field_id FROM #__osmembership_field_plan WHERE plan_id=' . $planId . '))');
+
+		if (!$user->authorise('core.admin', 'com_osmembership'))
+		{
+			$query->where('`access` IN (' . implode(',', $user->getAuthorisedViewLevels()) . ')');
+		}
 
 		if ($fieldSuffix)
 		{
+			require_once JPATH_ROOT . '/components/com_osmembership/helper/database.php';
+
 			OSMembershipHelperDatabase::getMultilingualFields(
 				$query,
-				array('title', 'description', 'values', 'default_values', 'depend_on_options'),
+				array('title', 'description', 'values', 'default_values', 'depend_on_options', 'place_holder',),
 				$fieldSuffix
 			);
 		}
@@ -1311,6 +1624,7 @@ class OSMembershipHelper
 	{
 		$redirectUrl = '';
 		$activePlans = OSMembershipHelper::getActiveMembershipPlans();
+
 		if (count($activePlans) > 1)
 		{
 			$db    = JFactory::getDbo();
@@ -1322,6 +1636,7 @@ class OSMembershipHelper
 				->order('price DESC');
 			$db->setQuery($query);
 			$loginRedirectMenuId = $db->loadResult();
+
 			if ($loginRedirectMenuId)
 			{
 				$redirectUrl = 'index.php?Itemid=' . $loginRedirectMenuId;
@@ -1343,19 +1658,22 @@ class OSMembershipHelper
 	{
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
-		$data  = array();
+		$data  = [];
 		$query->select('a.name, b.field_value')
 			->from('#__osmembership_fields AS a')
 			->innerJoin('#__osmembership_field_value AS b ON a.id = b.field_id')
 			->where('b.subscriber_id = ' . $rowProfile->id);
 		$db->setQuery($query);
 		$fieldValues = $db->loadObjectList('name');
+
 		for ($i = 0, $n = count($rowFields); $i < $n; $i++)
 		{
 			$rowField = $rowFields[$i];
+
 			if ($rowField->is_core)
 			{
-				$data[$rowField->name] = $rowProfile->{$rowField->name};
+				$data[$rowField->name] = $rowProfile->{
+				$rowField->name};
 			}
 			else
 			{
@@ -1395,8 +1713,8 @@ class OSMembershipHelper
 		if ($rowProfile)
 		{
 			// Get the fields which are hided
-			$query->clear();
-			$query->select('*')
+			$query->clear()
+				->select('*')
 				->from('#__osmembership_fields')
 				->where('published = 1')
 				->where('hide_on_membership_renewal = 1')
@@ -1406,9 +1724,11 @@ class OSMembershipHelper
 			$hidedFields = $db->loadObjectList();
 
 			$hideFieldsData = OSMembershipHelper::getProfileData($rowProfile, 0, $hidedFields);
+
 			if (count(($hideFieldsData)))
 			{
 				$data = array_merge($data, $hideFieldsData);
+
 				foreach ($hidedFields as $field)
 				{
 					$fieldName = $field->name;
@@ -1437,6 +1757,7 @@ class OSMembershipHelper
 			->where('id !=' . (int) $row->id);
 		$db->setQuery($query);
 		$subscriptionIds = $db->loadColumn();
+
 		if (count($subscriptionIds))
 		{
 			if ($row->user_id && OSMembershipHelper::isUniquePlan($row->user_id))
@@ -1452,8 +1773,8 @@ class OSMembershipHelper
 			$form      = new MPFForm($rowFields);
 			$form->storeData($row->id, $data);
 
-			$query->clear();
-			$query->select('name')
+			$query->clear()
+				->select('name')
 				->from('#__osmembership_fields')
 				->where('is_core=1 AND published = 1');
 			$db->setQuery($query);
@@ -1500,26 +1821,15 @@ class OSMembershipHelper
 	/**
 	 * Get the email messages used for sending emails
 	 *
-	 * @return stdClass
+	 * @return MPFConfig
 	 */
 	public static function getMessages()
 	{
 		static $message;
-		if (!$message)
+
+		if ($message === null)
 		{
-			$message = new stdClass();
-			$db      = JFactory::getDbo();
-			$query   = $db->getQuery(true);
-			$query->select('*')->from('#__osmembership_messages');
-			$db->setQuery($query);
-			$rows = $db->loadObjectList();
-			for ($i = 0, $n = count($rows); $i < $n; $i++)
-			{
-				$row           = $rows[$i];
-				$key           = $row->message_key;
-				$value         = stripslashes($row->message);
-				$message->$key = $value;
-			}
+			$message = new MPFConfig('#__osmembership_messages', 'message_key', 'message');
 		}
 
 		return $message;
@@ -1533,12 +1843,14 @@ class OSMembershipHelper
 	public static function getFieldSuffix($activeLanguage = null)
 	{
 		$prefix = '';
+
 		if (JLanguageMultilang::isEnabled())
 		{
 			if (!$activeLanguage)
 			{
 				$activeLanguage = JFactory::getLanguage()->getTag();
 			}
+
 			if ($activeLanguage != self::getDefaultLanguage())
 			{
 				$db    = JFactory::getDbo();
@@ -1549,6 +1861,7 @@ class OSMembershipHelper
 					->where('published = 1');
 				$db->setQuery($query);
 				$sef = $db->loadResult();
+
 				if ($sef)
 				{
 					$prefix = '_' . $sef;
@@ -1561,7 +1874,7 @@ class OSMembershipHelper
 
 	/**
 	 * Function to get all available languages except the default language
-	 * @return languages object list
+	 * @return array languages object list
 	 */
 	public static function getLanguages()
 	{
@@ -1592,203 +1905,143 @@ class OSMembershipHelper
 
 	/**
 	 * Synchronize Membership Pro database to support multilingual
+	 *
+	 * @return void
 	 */
 	public static function setupMultilingual()
 	{
 		$languages = self::getLanguages();
+
 		if (count($languages))
 		{
 			$db                  = JFactory::getDbo();
 			$categoryTableFields = array_keys($db->getTableColumns('#__osmembership_categories'));
 			$planTableFields     = array_keys($db->getTableColumns('#__osmembership_plans'));
 			$fieldTableFields    = array_keys($db->getTableColumns('#__osmembership_fields'));
+
 			foreach ($languages as $language)
 			{
+				$prefix = $language->sef;
+
 				#Process for #__osmembership_categories table
-				$prefix    = $language->sef;
-				$fieldName = 'alias_' . $prefix;
-				if (!in_array($fieldName, $categoryTableFields))
+				$varcharFields = array(
+					'alias',
+					'title',
+				);
+
+				foreach ($varcharFields as $varcharField)
 				{
-					$sql = "ALTER TABLE  `#__osmembership_categories` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
+					$fieldName = $varcharField . '_' . $prefix;
+
+					if (!in_array($fieldName, $categoryTableFields))
+					{
+						$sql = "ALTER TABLE  `#__osmembership_categories` ADD  `$fieldName` VARCHAR( 255 );";
+						$db->setQuery($sql);
+						$db->execute();
+					}
 				}
 
-				$fieldName = 'title_' . $prefix;
-				if (!in_array($fieldName, $categoryTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_categories` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
-				}
+				$textFields = array(
+					'description',
+				);
 
-				$fieldName = 'description_' . $prefix;
-				if (!in_array($fieldName, $categoryTableFields))
+				foreach ($textFields as $textField)
 				{
-					$sql = "ALTER TABLE  `#__osmembership_categories` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
+					$fieldName = $textField . '_' . $prefix;
+
+					if (!in_array($fieldName, $categoryTableFields))
+					{
+						$sql = "ALTER TABLE  `#__osmembership_categories` ADD  `$fieldName` TEXT NULL;";
+						$db->setQuery($sql);
+						$db->execute();
+					}
 				}
 
 				#Process for #__osmembership_plans table
-				$fieldName = 'alias_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
+				$varcharFields = array(
+					'alias',
+					'title',
+					'page_title',
+					'page_heading',
+					'meta_keywords',
+					'meta_description',
+					'user_email_subject',
+					'subscription_approved_email_subject',
+					'user_renew_email_subject',
+				);
+
+				foreach ($varcharFields as $varcharField)
 				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
+					$fieldName = $varcharField . '_' . $prefix;
+
+					if (!in_array($fieldName, $planTableFields))
+					{
+						$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` VARCHAR( 255 );";
+						$db->setQuery($sql);
+						$db->execute();
+					}
 				}
 
-				$fieldName = 'title_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
+				$textFields = array(
+					'short_description',
+					'description',
+					'subscription_form_message',
+					'user_email_body',
+					'user_email_body_offline',
+					'subscription_approved_email_body',
+					'thanks_message',
+					'thanks_message_offline',
+					'user_renew_email_body'
+				);
+
+				foreach ($textFields as $textField)
 				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
+					$fieldName = $textField . '_' . $prefix;
+
+					if (!in_array($fieldName, $planTableFields))
+					{
+						$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
+						$db->setQuery($sql);
+						$db->execute();
+					}
 				}
 
-				$fieldName = 'short_description_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
+				#Process for #__osmembership_fields table
+				$varcharFields = array(
+					'title',
+					'place_holder',
+				);
+
+				foreach ($varcharFields as $varcharField)
 				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
+					$fieldName = $varcharField . '_' . $prefix;
+
+					if (!in_array($fieldName, $fieldTableFields))
+					{
+						$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` VARCHAR( 255 );";
+						$db->setQuery($sql);
+						$db->execute();
+					}
 				}
 
-				$fieldName = 'description_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
+				$textFields = array(
+					'description',
+					'values',
+					'default_values',
+					'fee_values',
+					'depend_on_options',
+				);
 
-				$fieldName = 'subscription_form_message_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
+				foreach ($textFields as $textField)
 				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
+					$fieldName = $textField . '_' . $prefix;
 
-				$fieldName = 'user_email_subject_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'user_email_body_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'user_email_body_offline_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'subscription_approved_email_subject_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'subscription_approved_email_body_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'thanks_message_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'thanks_message_offline_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'user_renew_email_subject_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'user_renew_email_body_' . $prefix;
-				if (!in_array($fieldName, $planTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_plans` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'title_' . $prefix;
-				if (!in_array($fieldName, $fieldTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` VARCHAR( 255 );";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'description_' . $prefix;
-				if (!in_array($fieldName, $fieldTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'values_' . $prefix;
-				if (!in_array($fieldName, $fieldTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'default_values_' . $prefix;
-				if (!in_array($fieldName, $fieldTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'fee_values_' . $prefix;
-				if (!in_array($fieldName, $fieldTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
-				}
-
-				$fieldName = 'depend_on_options_' . $prefix;
-				if (!in_array($fieldName, $fieldTableFields))
-				{
-					$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` TEXT NULL;";
-					$db->setQuery($sql);
-					$db->execute();
+					if (!in_array($fieldName, $fieldTableFields))
+					{
+						$sql = "ALTER TABLE  `#__osmembership_fields` ADD  `$fieldName` TEXT NULL;";
+						$db->setQuery($sql);
+						$db->execute();
+					}
 				}
 			}
 		}
@@ -1808,10 +2061,12 @@ class OSMembershipHelper
 	public static function loadBootstrap($loadJs = true)
 	{
 		$config = self::getConfig();
+
 		if ($loadJs)
 		{
 			JHtml::_('bootstrap.framework');
 		}
+
 		if (JFactory::getApplication()->isAdmin() || $config->load_twitter_bootstrap_in_frontend !== '0')
 		{
 			JHtml::_('bootstrap.loadCss');
@@ -1834,16 +2089,20 @@ class OSMembershipHelper
 			->where('a.link LIKE "%index.php?option=com_osmembership%"')
 			->where('a.published=1')
 			->where('a.access IN (' . implode(',', $user->getAuthorisedViewLevels()) . ')');
+
 		if ($app->isSite() && $app->getLanguageFilter())
 		{
 			$query->where('a.language IN (' . $db->quote(JFactory::getLanguage()->getTag()) . ',' . $db->quote('*') . ')');
 		}
+
 		$query->order('a.access');
 		$db->setQuery($query);
 		$itemId = $db->loadResult();
+
 		if (!$itemId)
 		{
 			$Itemid = $app->input->getInt('Itemid', 0);
+
 			if ($Itemid == 1)
 			{
 				$itemId = 999999;
@@ -1870,9 +2129,11 @@ class OSMembershipHelper
 		$menus     = $app->getMenu('site');
 		$component = JComponentHelper::getComponent('com_osmembership');
 		$items     = $menus->getItems('component_id', $component->id);
+
 		foreach ($views as $view)
 		{
 			$viewUrl = 'index.php?option=com_osmembership&view=' . $view;
+
 			foreach ($items as $item)
 			{
 				if (strpos($item->link, $viewUrl) !== false)
@@ -1901,12 +2162,18 @@ class OSMembershipHelper
 	 */
 	public static function getCountryCode($countryName)
 	{
-		$db  = JFactory::getDbo();
-		$sql = 'SELECT country_2_code FROM #__osmembership_countries WHERE LOWER(name)="' . JString::strtolower($countryName) . '"';
-		$db->setQuery($sql);
+		$db    = JFactory::getDbo();
+		$query = $db->getQuery(true);
+		$query->select('country_2_code')
+			->from('#__osmembership_countries')
+			->where('LOWER(name) = ' . $db->quote(StringHelper::strtolower($countryName)));
+		$db->setQuery($query);
 		$countryCode = $db->loadResult();
+
 		if (!$countryCode)
+		{
 			$countryCode = 'US';
+		}
 
 		return $countryCode;
 	}
@@ -1923,6 +2190,7 @@ class OSMembershipHelper
 	{
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
+
 		if (!$country)
 		{
 			$config  = self::getConfig();
@@ -1947,14 +2215,17 @@ class OSMembershipHelper
 	public static function loadLanguage()
 	{
 		static $loaded;
+
 		if (!$loaded)
 		{
 			$lang = JFactory::getLanguage();
 			$tag  = $lang->getTag();
+
 			if (!$tag)
 			{
 				$tag = 'en-GB';
 			}
+
 			$lang->load('com_osmembership', JPATH_ROOT, $tag);
 			$loaded = true;
 		}
@@ -1965,11 +2236,7 @@ class OSMembershipHelper
 	 */
 	public static function displayCopyRight()
 	{
-		JLoader::import('leehelper', JPATH_SITE . '/chocolatlib');
-		$leehelper = new Leehelper;
-		$version_t = $leehelper->getLastestVerison(); 
-
-		echo '<div class="copyright" style="text-align:center;margin-top: 5px;"><a href="http://joomdonation.com/joomla-extensions/membership-pro-joomla-membership-subscription.html" target="_blank"><strong>Membership Pro</strong></a> version '.$version_t.' , Copyright (C) 2012-' . date('Y') . ' <a href="http://joomdonation.com" target="_blank"><strong>Ossolution Team</strong></a></div>';
+		echo '<div class="copyright" style="text-align: center;margin-top: 5px;"><a href="http://joomdonation.com/joomla-extensions/membership-pro-joomla-membership-subscription.html" target="_blank"><strong>Membership Pro</strong></a> version ' . self::getInstalledVersion() . ', Copyright (C) 2012-' . date('Y') . ' <a href="http://joomdonation.com" target="_blank"><strong>Ossolution Team</strong></a></div>';
 	}
 
 	public static function validateEngine()
@@ -2005,10 +2272,10 @@ class OSMembershipHelper
 	public static function getGroupMemberExcludeGroupIds()
 	{
 		$plugin          = JPluginHelper::getPlugin('osmembership', 'groupmembership');
-		$params          = new JRegistry($plugin->params);
+		$params          = new Registry($plugin->params);
 		$excludeGroupIds = $params->get('exclude_group_ids', '7,8');
 		$excludeGroupIds = explode(',', $excludeGroupIds);
-		JArrayHelper::toInteger($excludeGroupIds);
+		$excludeGroupIds = ArrayHelper::toInteger($excludeGroupIds);
 
 		return $excludeGroupIds;
 	}
@@ -2124,6 +2391,7 @@ class OSMembershipHelper
 		$query  = $db->getQuery(true);
 		$query->select('MAX(invoice_number)')
 			->from('#__osmembership_subscribers');
+
 		if ($config->reset_invoice_number)
 		{
 			$currentYear = date('Y');
@@ -2132,6 +2400,7 @@ class OSMembershipHelper
 		}
 		$db->setQuery($query);
 		$invoiceNumber = (int) $db->loadResult();
+
 		if (!$invoiceNumber)
 		{
 			$invoiceNumber = (int) $config->invoice_start_number;
@@ -2162,8 +2431,8 @@ class OSMembershipHelper
 	/**
 	 * Format Membership Id
 	 *
-	 * @param $row
-	 * @param $config
+	 * @param OSMembershipTableSubscriber $row
+	 * @param                             $config
 	 *
 	 * @return string
 	 */
@@ -2173,20 +2442,28 @@ class OSMembershipHelper
 		{
 			$db    = JFactory::getDbo();
 			$query = $db->getQuery(true);
-			$query->select('YEAR(created_date)')
+			$query->select('created_date')
 				->from('#__osmembership_subscribers')
 				->where('id = ' . (int) $row->profile_id);
 			$db->setQuery($query);
-			$year = (int) $db->loadResult();
+			$createdDate = $db->loadResult();
 		}
 		else
 		{
-			$year = JHtml::_('date', $row->created_date, 'Y');
+			$createdDate = $row->created_date;
 		}
 
-		$idPrefix = str_replace('[YEAR]', $year, $config->membership_id_prefix);
+		$idPrefix = str_replace('[YEAR]', JHtml::_('date', $createdDate, 'Y'), $config->membership_id_prefix);
+		$idPrefix = str_replace('[MONTH]', JHtml::_('date', $createdDate, 'm'), $idPrefix);
 
-		return $idPrefix . $row->membership_id;
+		if ($config->membership_id_length)
+		{
+			return $idPrefix . str_pad($row->membership_id, (int) $config->membership_id_length, '0', STR_PAD_LEFT);
+		}
+		else
+		{
+			return $idPrefix . $row->membership_id;
+		}
 	}
 
 	/**
@@ -2200,6 +2477,13 @@ class OSMembershipHelper
 
 		require_once JPATH_ROOT . '/components/com_osmembership/tcpdf/tcpdf.php';
 		require_once JPATH_ROOT . '/components/com_osmembership/tcpdf/config/lang/eng.php';
+
+		if (OSMembershipHelper::isMethodOverridden('OSMembershipHelperOverrideHelper', 'generateInvoicePDF'))
+		{
+			OSMembershipHelperOverrideHelper::generateInvoicePDF($row);
+
+			return;
+		}
 
 		$db       = JFactory::getDbo();
 		$query    = $db->getQuery(true);
@@ -2223,8 +2507,8 @@ class OSMembershipHelper
 		$pdf->setPrintHeader(false);
 		$pdf->setPrintFooter(false);
 		$pdf->SetMargins(PDF_MARGIN_LEFT, 0, PDF_MARGIN_RIGHT);
-		$pdf->SetHeaderMargin(PDF_MARGIN_HEADER);
-		$pdf->SetFooterMargin(PDF_MARGIN_FOOTER);
+		$pdf->setHeaderMargin(PDF_MARGIN_HEADER);
+		$pdf->setFooterMargin(PDF_MARGIN_FOOTER);
 		//set auto page breaks
 		$pdf->SetAutoPageBreak(true, PDF_MARGIN_BOTTOM);
 		//set image scale factor
@@ -2234,9 +2518,21 @@ class OSMembershipHelper
 
 		$pdf->SetFont($font, '', 8);
 		$pdf->AddPage();
-		$invoiceOutput = $config->invoice_format;
+
+		$fieldSuffix = OSMembershipHelper::getFieldSuffix($row->language);
+
+		if ($fieldSuffix && strlen(strip_tags($config->{'invoice_format' . $fieldSuffix})) > 100)
+		{
+			$invoiceOutput = $config->{'invoice_format' . $fieldSuffix};
+		}
+		else
+		{
+			$invoiceOutput = $config->invoice_format;
+		}
 
 		$replaces                      = array();
+		$replaces['first_name']        = $row->first_name;
+		$replaces['last_name']         = $row->last_name;
 		$replaces['name']              = $row->first_name . ' ' . $row->last_name;
 		$replaces['email']             = $row->email;
 		$replaces['user_id']           = $row->user_id;
@@ -2250,6 +2546,7 @@ class OSMembershipHelper
 		$replaces['country_code']      = self::getCountryCode($row->country);
 		$replaces['phone']             = $row->phone;
 		$replaces['fax']               = $row->fax;
+		$replaces['comment']           = $row->comment;
 		$replaces['invoice_number']    = self::formatInvoiceNumber($row, $config);
 		$replaces['invoice_date']      = JHtml::_('date', $row->created_date, $config->date_format);
 		$replaces['from_date']         = JHtml::_('date', $row->from_date, $config->date_format);
@@ -2263,6 +2560,8 @@ class OSMembershipHelper
 		$replaces['membership_id']     = self::formatMembershipId($row, $config);
 		$replaces['end_date']          = $replaces['to_date'];
 		$replaces['payment_method']    = '';
+		$replaces['profile_id']        = $row->profile_id;
+
 		if ($row->payment_method)
 		{
 			$method = os_payments::loadPaymentMethod($row->payment_method);
@@ -2272,16 +2571,16 @@ class OSMembershipHelper
 			}
 		}
 
-		$query->clear();
 		// Support for name of custom field in tags
-		$query->select('field_id, field_value')
+		$query->clear()
+			->select('field_id, field_value')
 			->from('#__osmembership_field_value')
 			->where('subscriber_id = ' . $row->id);
 		$db->setQuery($query);
 		$rowValues = $db->loadObjectList('field_id');
 
-		$query->clear();
-		$query->select('id, name, fieldtype')
+		$query->clear()
+			->select('id, name, fieldtype')
 			->from('#__osmembership_fields AS a')
 			->where('a.published = 1')
 			->where('a.is_core = 0');
@@ -2291,13 +2590,16 @@ class OSMembershipHelper
 		for ($i = 0, $n = count($rowFields); $i < $n; $i++)
 		{
 			$rowField = $rowFields[$i];
+
 			if (isset($rowValues[$rowField->id]))
 			{
 				$fieldValue = $rowValues[$rowField->id]->field_value;
+
 				if (is_string($fieldValue) && is_array(json_decode($fieldValue)))
 				{
 					$fieldValue = implode(', ', json_decode($fieldValue));
 				}
+
 				if ($fieldValue && $rowField->fieldtype == 'Date')
 				{
 					try
@@ -2328,18 +2630,29 @@ class OSMembershipHelper
 		{
 			$invoiceStatus = JText::_('OSM_INVOICE_STATUS_PAID');
 		}
+		elseif ($row->published == 3)
+		{
+			$invoiceStatus = JText::_('OSM_INVOICE_STATUS_CANCELLED_PENDING');
+		}
+		elseif ($row->published == 4)
+		{
+			$invoiceStatus = JText::_('OSM_INVOICE_STATUS_CANCELLED_REFUNDED');
+		}
 		else
 		{
 			$invoiceStatus = JText::_('');
 		}
+
+		$replaces['SETUP_FEE']              = self::formatCurrency($row->setup_fee, $config, $rowPlan->currency_symbol);
 		$replaces['INVOICE_STATUS']         = $invoiceStatus;
 		$replaces['ITEM_QUANTITY']          = 1;
-		$replaces['ITEM_AMOUNT']            = $replaces['ITEM_SUB_TOTAL'] = self::formatCurrency($row->amount, $config);
-		$replaces['DISCOUNT_AMOUNT']        = self::formatCurrency($row->discount_amount, $config);
-		$replaces['SUB_TOTAL']              = self::formatCurrency($row->amount - $row->discount_amount, $config);
-		$replaces['TAX_AMOUNT']             = self::formatCurrency($row->tax_amount, $config);
-		$replaces['payment_processing_fee'] = self::formatCurrency($row->payment_processing_fee, $config);
-		$replaces['TOTAL_AMOUNT']           = self::formatCurrency($row->gross_amount, $config);
+		$replaces['ITEM_AMOUNT']            = $replaces['ITEM_SUB_TOTAL'] = self::formatCurrency($row->amount, $config, $rowPlan->currency_symbol);
+		$replaces['DISCOUNT_AMOUNT']        = self::formatCurrency($row->discount_amount, $config, $rowPlan->currency_symbol);
+		$replaces['SUB_TOTAL']              = self::formatCurrency($row->amount + $row->setup_fee - $row->discount_amount, $config, $rowPlan->currency_symbol);
+		$replaces['TAX_AMOUNT']             = self::formatCurrency($row->tax_amount, $config, $rowPlan->currency_symbol);
+		$replaces['payment_processing_fee'] = self::formatCurrency($row->payment_processing_fee, $config, $rowPlan->currency_symbol);
+		$replaces['TOTAL_AMOUNT']           = self::formatCurrency($row->gross_amount, $config, $rowPlan->currency_symbol);
+		$replaces['TAX_RATE']               = self::formatAmount($row->tax_rate, $config, $rowPlan->currency_symbol);
 
 		switch ($row->act)
 		{
@@ -2350,11 +2663,12 @@ class OSMembershipHelper
 			case 'upgrade':
 				$itemName = JText::_('OSM_PAYMENT_FOR_UPGRADE_SUBSCRIPTION');
 				$itemName = str_replace('[PLAN_TITLE]', $rowPlan->title, $itemName);
-				$sql      = 'SELECT a.title FROM #__osmembership_plans AS a '
-					. 'INNER JOIN #__osmembership_upgraderules AS b '
-					. 'ON a.id=b.from_plan_id '
-					. 'WHERE b.id=' . $row->upgrade_option_id;
-				$db->setQuery($sql);
+				$query->clear()
+					->select('a.title')
+					->from('#__osmembership_plans AS a')
+					->innerJoin('#__osmembership_upgraderules AS b ON a.id = b.from_plan_id')
+					->where('b.id = ' . $row->upgrade_option_id);
+				$db->setQuery($query);
 				$fromPlanTitle = $db->loadResult();
 				$itemName      = str_replace('[FROM_PLAN_TITLE]', $fromPlanTitle, $itemName);
 				break;
@@ -2363,14 +2677,21 @@ class OSMembershipHelper
 				$itemName = str_replace('[PLAN_TITLE]', $rowPlan->title, $itemName);
 				break;
 		}
-		$replaces['ITEM_NAME'] = $itemName;
+
+		$replaces['ITEM_NAME']              = $itemName;
+		$replaces['PLAN_SHORT_DESCRIPTION'] = $rowPlan->short_description;
+		$replaces['PLAN_DESCRIPTION']       = $rowPlan->description;
+		$replaces['PLAN_ID']                = $rowPlan->id;
+
 		foreach ($replaces as $key => $value)
 		{
 			$key           = strtoupper($key);
 			$invoiceOutput = str_ireplace("[$key]", $value, $invoiceOutput);
 		}
 
-		$v = $pdf->writeHTML($invoiceOutput, true, false, false, false, '');
+
+		$pdf->writeHTML($invoiceOutput, true, false, false, false, '');
+
 		//Filename
 		$filePath = JPATH_ROOT . '/media/com_osmembership/invoices/' . $replaces['invoice_number'] . '.pdf';
 		$pdf->Output($filePath, 'F');
@@ -2388,6 +2709,7 @@ class OSMembershipHelper
 		$row    = JTable::getInstance('osmembership', 'Subscriber');
 		$row->load($id);
 		$invoiceStorePath = JPATH_ROOT . '/media/com_osmembership/invoices/';
+
 		if ($row)
 		{
 			if (!$row->invoice_number)
@@ -2395,6 +2717,7 @@ class OSMembershipHelper
 				$row->invoice_number = self::getInvoiceNumber($row);
 				$row->store();
 			}
+
 			$invoiceNumber = self::formatInvoiceNumber($row, $config);
 			self::generateInvoicePDF($row);
 			$invoicePath = $invoiceStorePath . $invoiceNumber . '.pdf';
@@ -2414,9 +2737,11 @@ class OSMembershipHelper
 	public static function getOriginalFilename($filename)
 	{
 		$pos = strpos($filename, '_');
+
 		if ($pos !== false)
 		{
 			$timeInFilename = (int) substr($filename, 0, $pos);
+
 			if ($timeInFilename > 5000)
 			{
 				$filename = substr($filename, $pos + 1);
@@ -2437,12 +2762,14 @@ class OSMembershipHelper
 		$fsize    = @filesize($filePath);
 		$mod_date = date('r', filemtime($filePath));
 		$cont_dis = 'attachment';
+
 		if ($detectFilename)
 		{
 			$filename = self::getOriginalFilename($filename);
 		}
 		$ext  = JFile::getExt($filename);
 		$mime = self::getMimeType($ext);
+
 		// required for IE, otherwise Content-disposition is ignored
 		if (ini_get('zlib.output_compression'))
 		{
@@ -2474,6 +2801,7 @@ class OSMembershipHelper
 	public static function getMimeType($ext)
 	{
 		require_once JPATH_ROOT . "/components/com_osmembership/helper/mime.mapping.php";
+
 		foreach ($mime_extension_map as $key => $value)
 		{
 			if ($key == $ext)
@@ -2499,10 +2827,12 @@ class OSMembershipHelper
 		$buffer    = '';
 		$cnt       = 0;
 		$handle    = fopen($filename, 'rb');
+
 		if ($handle === false)
 		{
 			return false;
 		}
+
 		while (!feof($handle))
 		{
 			$buffer = fread($handle, $chunksize);
@@ -2515,6 +2845,7 @@ class OSMembershipHelper
 			}
 		}
 		$status = fclose($handle);
+
 		if ($retbytes && $status)
 		{
 			return $cnt; // return num. bytes delivered like readfile() does.
@@ -2526,32 +2857,76 @@ class OSMembershipHelper
 	/**
 	 * Convert all img tags to use absolute URL
 	 *
-	 * @param string $html_content
+	 * @param string $text
+	 *
+	 * @return string
 	 */
-	public static function convertImgTags($html_content)
+	public static function convertImgTags($text)
 	{
+		$app = JFactory::getApplication();
+
+		$siteUrl    = JUri::root();
+		$rootURL    = rtrim(JUri::root(), '/');
+		$subpathURL = JUri::root(true);
+
+		if (!empty($subpathURL) && ($subpathURL != '/'))
+		{
+			$rootURL = substr($rootURL, 0, -1 * strlen($subpathURL));
+		}
+
+		// Replace index.php URI by SEF URI.
+		if (strpos($text, 'href="index.php?') !== false)
+		{
+			preg_match_all('#href="index.php\?([^"]+)"#m', $text, $matches);
+
+			foreach ($matches[1] as $urlQueryString)
+			{
+
+				if ($app->isSite())
+				{
+					$text = str_replace(
+						'href="index.php?' . $urlQueryString . '"',
+						'href="' . $rootURL . JRoute::_('index.php?' . $urlQueryString) . '"',
+						$text
+					);
+				}
+				else
+				{
+					$text = str_replace(
+						'href="index.php?' . $urlQueryString . '"',
+						'href="' . $siteUrl . 'index.php?' . $urlQueryString . '"',
+						$text
+					);
+				}
+			}
+		}
+
 		$patterns     = array();
 		$replacements = array();
 		$i            = 0;
 		$src_exp      = "/src=\"(.*?)\"/";
 		$link_exp     = "[^http:\/\/www\.|^www\.|^https:\/\/|^http:\/\/]";
-		$siteURL      = JUri::root();
-		preg_match_all($src_exp, $html_content, $out, PREG_SET_ORDER);
+
+		preg_match_all($src_exp, $text, $out, PREG_SET_ORDER);
+
 		foreach ($out as $val)
 		{
 			$links = preg_match($link_exp, $val[1], $match, PREG_OFFSET_CAPTURE);
+
 			if ($links == '0')
 			{
 				$patterns[$i]     = $val[1];
 				$patterns[$i]     = "\"$val[1]";
-				$replacements[$i] = $siteURL . $val[1];
+				$replacements[$i] = $siteUrl . $val[1];
 				$replacements[$i] = "\"$replacements[$i]";
 			}
+
 			$i++;
 		}
-		$mod_html_content = str_replace($patterns, $replacements, $html_content);
 
-		return $mod_html_content;
+		$text = str_replace($patterns, $replacements, $text);
+
+		return $text;
 	}
 
 	/**
@@ -2569,7 +2944,8 @@ class OSMembershipHelper
 
 		$row->state                         = self::getStateName($row->country, $row->state);
 		$replaces                           = array();
-		$replaces['user_id']                = $row->first_name;
+		$replaces['user_id']                = $row->user_id;
+		$replaces['profile_id']             = $row->profile_id;
 		$replaces['first_name']             = $row->first_name;
 		$replaces['last_name']              = $row->last_name;
 		$replaces['organization']           = $row->organization;
@@ -2580,7 +2956,7 @@ class OSMembershipHelper
 		$replaces['zip']                    = $row->zip;
 		$replaces['country']                = $row->country;
 		$replaces['phone']                  = $row->phone;
-		$replaces['fax']                    = $row->phone;
+		$replaces['fax']                    = $row->fax;
 		$replaces['email']                  = $row->email;
 		$replaces['comment']                = $row->comment;
 		$replaces['amount']                 = self::formatAmount($row->amount, $config);
@@ -2588,15 +2964,28 @@ class OSMembershipHelper
 		$replaces['tax_amount']             = self::formatAmount($row->tax_amount, $config);
 		$replaces['gross_amount']           = self::formatAmount($row->gross_amount, $config);
 		$replaces['payment_processing_fee'] = self::formatAmount($row->payment_processing_fee, $config);
+		$replaces['tax_rate']               = self::formatAmount($row->tax_rate, $config);
 		$replaces['from_date']              = JHtml::_('date', $row->from_date, $config->date_format);
 		$replaces['to_date']                = JHtml::_('date', $row->to_date, $config->date_format);
 		$replaces['created_date']           = JHtml::_('date', $row->created_date, $config->date_format);
 		$replaces['date']                   = JHtml::_('date', 'Now', $config->date_format);
 		$replaces['end_date']               = $replaces['to_date'];
 		$replaces['payment_method']         = '';
+
+		// Support avatar tags
+		if ($row->avatar && file_exists(JPATH_ROOT . '/media/com_osmembership/avatars/' . $row->avatar))
+		{
+			$replaces['avatar'] = '<img class="oms-avatar" src="media/com_osmembership/avatars/' . $row->avatar . '"/>';
+		}
+		else
+		{
+			$replaces['avatar'] = '';
+		}
+
 		if ($row->payment_method)
 		{
 			$method = os_payments::loadPaymentMethod($row->payment_method);
+
 			if ($method)
 			{
 				$replaces['payment_method'] = JText::_($method->title);
@@ -2633,9 +3022,11 @@ class OSMembershipHelper
 		$replaces['transaction_id'] = $row->transaction_id;
 		$replaces['membership_id']  = self::formatMembershipId($row, $config);
 		$replaces['invoice_number'] = self::formatInvoiceNumber($row, $config);
+
 		if ($row->payment_method)
 		{
 			$method = os_payments::loadPaymentMethod($row->payment_method);
+
 			if ($method)
 			{
 				$replaces['payment_method'] = $method->title;
@@ -2646,6 +3037,27 @@ class OSMembershipHelper
 			}
 		}
 
+		switch ($row->published)
+		{
+			case 0 :
+				$replaces['subscription_status'] = JText::_('OSM_PENDING');
+				break;
+			case 1 :
+				$replaces['subscription_status'] = JText::_('OSM_ACTIVE');
+				break;
+			case 2 :
+				$replaces['subscription_status'] = JText::_('OSM_EXPIRED');
+				break;
+			case 3 :
+				$replaces['subscription_status'] = JText::_('OSM_CANCELLED_PENDING');
+				break;
+			case 4 :
+				$replaces['subscription_status'] = JText::_('OSM_CANCELLED_REFUNDED');
+				break;
+			default:
+				$replaces['subscription_status'] = 'Unknown';
+		}
+
 		// Support for name of custom field in tags
 		$query->select('field_id, field_value')
 			->from('#__osmembership_field_value')
@@ -2653,8 +3065,8 @@ class OSMembershipHelper
 		$db->setQuery($query);
 		$rowValues = $db->loadObjectList('field_id');
 
-		$query->clear();
-		$query->select('id, name, fieldtype')
+		$query->clear()
+			->select('id, name, fieldtype')
 			->from('#__osmembership_fields AS a')
 			->where('a.published = 1')
 			->where('a.is_core = 0')
@@ -2665,6 +3077,7 @@ class OSMembershipHelper
 		for ($i = 0, $n = count($rowFields); $i < $n; $i++)
 		{
 			$rowField = $rowFields[$i];
+
 			if (isset($rowValues[$rowField->id]))
 			{
 				$fieldValue = $rowValues[$rowField->id]->field_value;
@@ -2672,6 +3085,7 @@ class OSMembershipHelper
 				{
 					$fieldValue = implode(', ', json_decode($fieldValue));
 				}
+
 				if ($fieldValue && $rowField->fieldtype == 'Date')
 				{
 					try
@@ -2693,6 +3107,15 @@ class OSMembershipHelper
 				$replaces[$rowField->name] = '';
 			}
 		}
+
+		// Build plan replaced tags
+		$rowPlan = OSMembershipHelperDatabase::getPlan($row->plan_id);
+
+		$replaces['plan_short_description'] = $rowPlan->short_description;
+		$replaces['plan_description']       = $rowPlan->description;
+		$replaces['plan_id']                = $rowPlan->id;
+		$replaces['plan_title']             = $rowPlan->title;
+
 
 		return $replaces;
 	}
@@ -2801,10 +3224,11 @@ class OSMembershipHelper
 
 		if ($row->payment_method == 'os_creditcard')
 		{
-			$cardNumber          = JRequest::getVar('x_card_num', '');
+			$cardNumber          = JFactory::getApplication()->input->getString('x_card_num');
 			$last4Digits         = substr($cardNumber, strlen($cardNumber) - 4);
 			$data['last4Digits'] = $last4Digits;
 		}
+
 		if ($row->user_id)
 		{
 			$query->clear()
@@ -2825,6 +3249,7 @@ class OSMembershipHelper
 			$crypt            = new JCrypt(new JCryptCipherSimple, $key);
 			$data['password'] = $crypt->decrypt($row->user_password);
 		}
+
 		$rowFields = OSMembershipHelper::getProfileFields($row->plan_id, true, $row->language);
 		$formData  = OSMembershipHelper::getProfileData($row, $row->plan_id, $rowFields);
 		$form      = new MPFForm($rowFields);
@@ -2833,6 +3258,7 @@ class OSMembershipHelper
 		$data['form'] = $form;
 
 		$params = JComponentHelper::getParams('com_users');
+
 		if (!$params->get('sendpassword', 1) && isset($data['password']))
 		{
 			unset($data['password']);
@@ -2885,6 +3311,7 @@ class OSMembershipHelper
 	public static function saveRegistration($data)
 	{
 		$config = OSMembershipHelper::getConfig();
+
 		if (!empty($config->use_cb_api))
 		{
 			return static::userRegistrationCB($data['first_name'], $data['last_name'], $data['email'], $data['username'], $data['password1']);
@@ -2893,10 +3320,12 @@ class OSMembershipHelper
 		//Need to load com_users language file
 		$lang = JFactory::getLanguage();
 		$tag  = $lang->getTag();
+
 		if (!$tag)
 		{
 			$tag = 'en-GB';
 		}
+
 		$lang->load('com_users', JPATH_ROOT, $tag);
 		$userData             = array();
 		$userData['username'] = $data['username'];
@@ -2904,9 +3333,17 @@ class OSMembershipHelper
 		$userData['password'] = $userData['password1'] = $userData['password2'] = $data['password1'];
 		$userData['email']    = $userData['email1'] = $userData['email2'] = $data['email'];
 		$sendActivationEmail  = OSMembershipHelper::getConfigValue('send_activation_email');
+
 		if ($sendActivationEmail)
 		{
 			require_once JPATH_ROOT . '/components/com_users/models/registration.php';
+
+			if (JLanguageMultilang::isEnabled())
+			{
+				JForm::addFormPath(JPATH_ROOT . '/components/com_users/models/forms');
+				JForm::addFieldPath(JPATH_ROOT . '/components/com_users/models/fields');
+			}
+
 			$model = new UsersModelRegistration();
 			$model->register($userData);
 
@@ -2918,8 +3355,8 @@ class OSMembershipHelper
 				->where('username=' . $db->quote($data['username']));
 
 			$db->setQuery($query);
-
 			$userId = (int) $db->loadResult();
+
 			if (!$userId)
 			{
 				throw new Exception($model->getError());
@@ -2931,18 +3368,22 @@ class OSMembershipHelper
 		{
 			$params         = JComponentHelper::getParams('com_users');
 			$userActivation = $params->get('useractivation');
+
 			if (($userActivation == 1) || ($userActivation == 2))
 			{
-				$userData['activation'] = JApplication::getHash(JUserHelper::genRandomPassword());
+				$userData['activation'] = JApplicationHelper::getHash(JUserHelper::genRandomPassword());
 				$userData['block']      = 1;
 			}
+
 			$userData['groups']   = array();
 			$userData['groups'][] = $params->get('new_usertype', 2);
 			$user                 = new JUser();
+
 			if (!$user->bind($userData))
 			{
 				throw new Exception(JText::sprintf('COM_USERS_REGISTRATION_BIND_FAILED', $user->getError()));
 			}
+
 			// Store the data.
 			if (!$user->save())
 			{
@@ -3041,6 +3482,7 @@ class OSMembershipHelper
 	{
 		$uri  = JUri::getInstance();
 		$base = $uri->toString(array('scheme', 'host', 'port'));
+
 		if (strpos(php_sapi_name(), 'cgi') !== false && !ini_get('cgi.fix_pathinfo') && !empty($_SERVER['REQUEST_URI']))
 		{
 			$script_name = $_SERVER['PHP_SELF'];
@@ -3068,6 +3510,7 @@ class OSMembershipHelper
 		}
 
 		$config = self::getConfig();
+
 		if ($config->use_https)
 		{
 			$siteUrl = str_replace('http://', 'https://', $siteUrl);
@@ -3085,6 +3528,11 @@ class OSMembershipHelper
 	 */
 	public static function getRestrictionRedirectUrl($planIds)
 	{
+		if (OSMembershipHelper::isMethodOverridden('OSMembershipHelperOverrideHelper', 'getRestrictionRedirectUrl'))
+		{
+			return OSMembershipHelperOverrideHelper::getRestrictionRedirectUrl($planIds);
+		}
+
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
 
@@ -3096,19 +3544,20 @@ class OSMembershipHelper
 		$categoryId = (int) $db->loadResult();
 
 		$needles = array();
+
 		if (count($planIds) == 1)
 		{
-			$planId                = $planIds[0];
-			$needles['register']   = array($planId);
-			$needles['plan']       = array($planId);
-			$needles['plans']      = array($categoryId);
-			$needles['categories'] = array($categoryId);
+			$planId = $planIds[0];
+
+			$Itemid = OSMembershipHelperRoute::getPlanMenuId($planId, $categoryId, OSMembershipHelper::getItemid());
+
+			return JRoute::_('index.php?option=com_osmembership&view=plan' . ($categoryId > 0 ? '&catid=' . $categoryId : '') . '&id=' . $planId . '&Itemid=' . $Itemid);
 		}
 		elseif ($categoryId > 0)
 		{
 			// If the category contains all the plans here, we will find menu item linked to that category
-			$query->clear();
-			$query->select('id')
+			$query->clear()
+				->select('id')
 				->from('#__osmembership_plans')
 				->where('category_id = ' . $categoryId)
 				->where('published = 1');
@@ -3147,20 +3596,169 @@ class OSMembershipHelper
 	 */
 	public static function getUserInput($userId, $subscriberId)
 	{
-		$field = JFormHelper::loadFieldType('User');
-
-		$element = new SimpleXMLElement('<field />');
-		$element->addAttribute('name', 'user_id');
-		$element->addAttribute('class', 'readonly');
-
-		if (!$subscriberId)
+		if (JFactory::getApplication()->isSite())
 		{
-			$element->addAttribute('onchange', 'populateSubscriberData();');
+			// Initialize variables.
+			$html = array();
+			$link = 'index.php?option=com_osmembership&amp;view=users&amp;layout=modal&amp;tmpl=component&amp;field=user_id';
+			// Initialize some field attributes.
+			$attr = ' class="inputbox"';
+			// Load the modal behavior script.
+			JHtml::_('behavior.modal', 'a.modal_user_id');
+			// Build the script.
+			$script   = array();
+			$script[] = '	function jSelectUser_user_id(id, title) {';
+			$script[] = '			document.getElementById("jform_user_id").value = title; ';
+			$script[] = '			document.getElementById("user_id_id").value = id; ';
+			if (!$subscriberId)
+			{
+				$script[] = 'populateSubscriberData()';
+			}
+			$script[] = '		SqueezeBox.close();';
+			$script[] = '	}';
+			// Add the script to the document head.
+			JFactory::getDocument()->addScriptDeclaration(implode("\n", $script));
+			// Load the current username if available.
+			$table = JTable::getInstance('user');
+			if ($userId)
+			{
+				$table->load($userId);
+			}
+			else
+			{
+				$table->name = '';
+			}
+			// Create a dummy text field with the user name.
+			$html[] = '<div class="input-append">';
+			$html[] = '	<input type="text" readonly="" name="jform[user_id]" id="jform_user_id"' . ' value="' . $table->name . '"' . $attr . ' />';
+			$html[] = '	<input type="hidden" name="user_id" id="user_id_id"' . ' value="' . $userId . '"' . $attr . ' />';
+			// Create the user select button.
+			$html[] = '<a class="btn btn-primary button-select modal_user_id" title="' . JText::_('JLIB_FORM_CHANGE_USER') . '"' . ' href="' . $link . '"' .
+				' rel="{handler: \'iframe\', size: {x: 800, y: 500}}">';
+			$html[] = ' <span class="icon-user"></span></a>';
+			$html[] = '</div>';
+
+			return implode("\n", $html);
+		}
+		else
+		{
+			$field = JFormHelper::loadFieldType('User');
+
+			$element = new SimpleXMLElement('<field />');
+			$element->addAttribute('name', 'user_id');
+			$element->addAttribute('class', 'readonly');
+
+			if (!$subscriberId)
+			{
+				$element->addAttribute('onchange', 'populateSubscriberData();');
+			}
+
+			$field->setup($element, $userId);
+
+			return $field->input;
+		}
+	}
+
+	/**
+	 * Check if the given message entered via HTML editor has actual data
+	 *
+	 * @param $string
+	 *
+	 * @return bool
+	 */
+	public static function isValidMessage($string)
+	{
+		$string = strip_tags($string, '<img>');
+
+		// Remove none printable characters
+		$string = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x80-\x9F]/u', '', $string);
+
+		$string = trim($string);
+
+		if (strlen($string))
+		{
+			return true;
 		}
 
-		$field->setup($element, $userId);
+		return false;
+	}
 
-		return $field->input;
+	/**
+	 * Get documents path
+	 *
+	 * @return string
+	 */
+	public static function getDocumentsPath()
+	{
+		$documentsPath = JPATH_ROOT . '/media/com_osmembership/documents';
+
+		$plugin = JPluginHelper::getPlugin('osmembership', 'documents');
+
+		if (is_string($plugin->params))
+		{
+			$params = new Registry($plugin->params);
+		}
+		elseif ($plugin->params instanceof Registry)
+		{
+			$params = $plugin->params;
+		}
+		else
+		{
+			$params = new Registry;
+		}
+
+		$path = $params->get('documents_path', 'media/com_osmembership/documents');
+
+		if (JFolder::exists(JPATH_ROOT . '/' . $path))
+		{
+			$documentsPath = JPATH_ROOT . '/' . $path;
+		}
+		elseif (JFolder::exists($path))
+		{
+			$documentsPath = $path;
+		}
+
+		return $documentsPath;
+	}
+
+	/**
+	 * Get all dependencies custom fields of a given field
+	 *
+	 * @param $id
+	 *
+	 * @return array
+	 */
+	public static function getAllDependencyFields($id)
+	{
+		$db    = JFactory::getDbo();
+		$query = $db->getQuery(true);
+
+		$queue  = array($id);
+		$fields = array($id);
+
+		while (count($queue))
+		{
+			$masterFieldId = array_pop($queue);
+
+			//Get list of dependency fields of this master field
+			$query->clear()
+				->select('id')
+				->from('#__osmembership_fields')
+				->where('depend_on_field_id = ' . $masterFieldId);
+			$db->setQuery($query);
+			$rows = $db->loadObjectList();
+
+			if (count($rows))
+			{
+				foreach ($rows as $row)
+				{
+					$queue[]  = $row->id;
+					$fields[] = $row->id;
+				}
+			}
+		}
+
+		return $fields;
 	}
 
 	/**
@@ -3170,6 +3768,6 @@ class OSMembershipHelper
 	 */
 	public static function getInstalledVersion()
 	{
-		return '2.6.1';
+		return '2.14.1';
 	}
 }

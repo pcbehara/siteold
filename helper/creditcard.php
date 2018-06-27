@@ -3,11 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// no direct access
 defined('_JEXEC') or die;
 
 class OSMembershipHelperCreditcard
@@ -50,9 +49,10 @@ class OSMembershipHelperCreditcard
 	 *
 	 * @return boolean True if the supplied card number is valid
 	 */
-	public static function validateLuhn($number)
+	protected static function validateLuhn($number)
 	{
 		$str = '';
+
 		foreach (array_reverse(str_split($number)) as $i => $c)
 		{
 			$str .= $i % 2 ? $c * 2 : $c;
@@ -95,7 +95,7 @@ class OSMembershipHelperCreditcard
 			}
 		}
 
-		return;
+		return '';
 	}
 
 	/**
@@ -107,7 +107,7 @@ class OSMembershipHelperCreditcard
 	 *
 	 * @return string
 	 */
-	public static function getExpiryDate($format, $expMonth, $expYear)
+	protected static function getExpiryDate($format, $expMonth, $expYear)
 	{
 		return gmdate($format, gmmktime(0, 0, 0, $expMonth, 1, $expYear));
 	}

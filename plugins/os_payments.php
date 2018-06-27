@@ -3,12 +3,13 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// no direct access
 defined('_JEXEC') or die;
+
+use Joomla\Registry\Registry;
 
 class os_payments
 {
@@ -20,6 +21,7 @@ class os_payments
 	public static function getPaymentMethods($onlyRecurring = false, $methodIds = null)
 	{
 		static $methods;
+
 		if (!$methods)
 		{
 			$db    = JFactory::getDbo();
@@ -39,20 +41,47 @@ class os_payments
 			{
 				$query->where('id IN (' . $methodIds . ')');
 			}
+
 			$db->setQuery($query);
 			$rows = $db->loadObjectList();
+
+			$baseUri = JUri::base(true);
+
 			foreach ($rows as $row)
 			{
 				if (file_exists(JPATH_ROOT . '/components/com_osmembership/plugins/' . $row->name . '.php'))
 				{
 					require_once JPATH_ROOT . '/components/com_osmembership/plugins/' . $row->name . '.php';
-					$params        = new JRegistry($row->params);
-					$method        = new $row->name($params);
+
+					$params = new Registry($row->params);
+					$method = new $row->name($params);
 					$method->setTitle($row->title);
+
 					if ($params->get('payment_fee_amount') > 0 || $params->get('payment_fee_percent'))
 					{
 						$method->paymentFee = true;
 					}
+					else
+					{
+						$method->paymentFee = false;
+					}
+
+					$iconUri = '';
+
+					if ($icon = $params->get('icon'))
+					{
+						if (file_exists(JPATH_ROOT . '/media/com_osmembership/assets/images/paymentmethods/' . $icon))
+						{
+							$iconUri = $baseUri . '/media/com_osmembership/assets/images/paymentmethods/' . $icon;
+						}
+						elseif (file_exists(JPATH_ROOT . '/' . $icon))
+						{
+							$iconUri = $baseUri . '/' . $icon;
+						}
+					}
+
+					$method->iconUri = $iconUri;
+
 					$methods[] = $method;
 				}
 			}
@@ -70,6 +99,7 @@ class os_payments
 	{
 		$methods  = os_payments::getPaymentMethods();
 		$jsString = " methods = new PaymentMethods();\n";
+
 		if (count($methods))
 		{
 			foreach ($methods as $method)
@@ -78,6 +108,7 @@ class os_payments
 				$jsString .= " methods.Add(method);\n";
 			}
 		}
+
 		echo $jsString;
 	}
 
@@ -105,7 +136,7 @@ class os_payments
 	 *
 	 * @return string
 	 */
-	public static function getDefautPaymentMethod($methodIds = null)
+	public static function getDefautPaymentMethod($methodIds = null, $onlyRecurring = false)
 	{
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
@@ -118,6 +149,11 @@ class os_payments
 		if ($methodIds)
 		{
 			$query->where('id IN (' . $methodIds . ')');
+		}
+
+		if ($onlyRecurring)
+		{
+			$query->where('(support_recurring_subscription = 1 OR name = "os_offline")');
 		}
 
 		$db->setQuery($query);
@@ -135,6 +171,7 @@ class os_payments
 	public static function getPaymentMethod($name)
 	{
 		$methods = os_payments::getPaymentMethods();
+
 		foreach ($methods as $method)
 		{
 			if ($method->getName() == $name)

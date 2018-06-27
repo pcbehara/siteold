@@ -3,20 +3,28 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012-2014 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
+
+defined('_JEXEC') or die;
+
 if (!isset($categoryId))
 {
 	$categoryId = 0;
 }
+
 $span7Class    = $bootstrapHelper->getClassMapping('span7');
 $span5class    = $bootstrapHelper->getClassMapping('span5');
 $btnClass      = $bootstrapHelper->getClassMapping('btn');
 $imgClass      = $bootstrapHelper->getClassMapping('img-polaroid');
 $rowFluidClass = $bootstrapHelper->getClassMapping('row-fluid');
+
+$subscribedPlanIds = OSMembershipHelperSubscription::getSubscribedPlans();
+$exclusivePlanIds = OSMembershipHelperSubscription::getExclusivePlanIds();
 $nullDate      = JFactory::getDbo()->getNullDate();
 $defaultItemId = $Itemid;
+
 for ($i = 0 , $n = count($items) ;  $i < $n ; $i++)
 {
 	$item = $items[$i] ;
@@ -77,6 +85,22 @@ for ($i = 0 , $n = count($items) ;  $i < $n ; $i++)
 				<div class="<?php echo $span5class; ?>">
 					<table class="table table-bordered table-striped">
 						<?php
+						if ($item->setup_fee > 0)
+						{
+						?>
+							<tr class="osm-plan-property">
+								<td class="osm-plan-property-label">
+									<?php echo JText::_('OSM_SETUP_FEE'); ?>:
+								</td>
+								<td class="osm-plan-property-value">
+									<?php
+										echo OSMembershipHelper::formatCurrency($item->setup_fee, $config, $symbol);
+									?>
+								</td>
+							</tr>
+						<?php
+						}
+
 						if ($item->recurring_subscription && $item->trial_duration)
 						{
 						?>
@@ -194,15 +218,38 @@ for ($i = 0 , $n = count($items) ;  $i < $n ; $i++)
 			<div class="osm-taskbar clearfix">
 				<ul>
 					<?php
-					if (OSMembershipHelper::canSubscribe($item))
+					if (OSMembershipHelper::canSubscribe($item) && (!in_array($item->id, $exclusivePlanIds) || in_array($item->id, $subscribedPlanIds)))
 					{
-					?>
-						<li>
-							<a href="<?php echo $signUpUrl; ?>" class="<?php echo $btnClass; ?> btn-primary">
-								<?php echo JText::_('OSM_SIGNUP'); ?>
-							</a>
-						</li>
-					<?php
+						if (empty($item->upgrade_rules) || !$config->get('hide_signup_button_if_upgrade_available'))
+                        {
+	                    ?>
+                            <li>
+                                <a href="<?php echo $signUpUrl; ?>" class="<?php echo $btnClass; ?> btn-primary">
+			                        <?php echo in_array($item->id, $subscribedPlanIds) ? JText::_('OSM_RENEW') : JText::_('OSM_SIGNUP'); ?>
+                                </a>
+                            </li>
+	                    <?php
+                        }
+
+                        if(!empty($item->upgrade_rules))
+						{
+							if (count($item->upgrade_rules) > 1)
+							{
+								$link = JRoute::_('index.php?option=com_osmembership&view=upgrademembership&to_plan_id=' . $item->id . '&Itemid=' . OSMembershipHelperRoute::findView('upgrademembership', $Itemid));
+							}
+							else
+							{
+								$upgradeOptionId = $item->upgrade_rules[0]->id;
+								$link            = JRoute::_('index.php?option=com_osmembership&task=register.process_upgrade_membership&upgrade_option_id=' . $upgradeOptionId . '&Itemid=' . $Itemid);
+							}
+							?>
+                            <li>
+                                <a href="<?php echo $link; ?>" class="<?php echo $btnClass; ?> btn-primary">
+									<?php echo JText::_('OSM_UPGRADE'); ?>
+                                </a>
+                            </li>
+							<?php
+						}
 					}
 
 					if (empty($config->hide_details_button))

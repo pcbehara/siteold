@@ -3,15 +3,17 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 defined('_JEXEC') or die;
 $item = $this->item;
+
 if ($item->thumb)
 {
 	$imgSrc = JUri::base() . 'media/com_osmembership/' . $item->thumb;
 }
+
 if ($this->config->use_https)
 {
 	$signUpUrl = JRoute::_(OSMembershipHelperRoute::getSignupRoute($item->id, $this->Itemid), false, 1);
@@ -20,14 +22,17 @@ else
 {
 	$signUpUrl = JRoute::_(OSMembershipHelperRoute::getSignupRoute($item->id, $this->Itemid));
 }
-$pageHeading = $this->params->get('page_heading') ? $this->params->get('page_heading') : $item->title;
+
+$subscribedPlanIds = OSMembershipHelperSubscription::getSubscribedPlans();
+$exclusivePlanIds = OSMembershipHelperSubscription::getExclusivePlanIds();
+
 $nullDate    = JFactory::getDbo()->getNullDate();
 $symbol = $item->currency_symbol ? $item->currency_symbol : $item->currency;
 ?>
 <div id="osm-plan-item" class="osm-container">
 	<div class="osm-item-heading-box clearfix">
 		<h1 class="osm-page-title">
-			<?php echo $pageHeading; ?>
+			<?php echo $this->params->get('page_heading'); ?>
 		</h1>
 	</div>
 	<div class="osm-item-description clearfix">
@@ -53,6 +58,22 @@ $symbol = $item->currency_symbol ? $item->currency_symbol : $item->currency;
 				<div class="<?php echo $this->bootstrapHelper->getClassMapping('span5'); ?>">
 					<table class="table table-bordered table-striped">
 						<?php
+						if ($item->setup_fee > 0)
+						{
+						?>
+							<tr class="osm-plan-property">
+								<td class="osm-plan-property-label">
+									<?php echo JText::_('OSM_SETUP_FEE'); ?>:
+								</td>
+								<td class="osm-plan-property-value">
+									<?php
+										echo OSMembershipHelper::formatCurrency($item->setup_fee, $this->config, $symbol);
+									?>
+								</td>
+							</tr>
+						<?php
+						}
+
 						if ($item->recurring_subscription && $item->trial_duration)
 						{
 						?>
@@ -170,15 +191,38 @@ $symbol = $item->currency_symbol ? $item->currency_symbol : $item->currency;
 			<div class="osm-taskbar clearfix">
 				<ul>
 					<?php
-					if (OSMembershipHelper::canSubscribe($item))
+					if (OSMembershipHelper::canSubscribe($item) && (!in_array($item->id, $exclusivePlanIds) || in_array($item->id, $subscribedPlanIds)))
 					{
-					?>
-						<li>
-							<a href="<?php echo $signUpUrl; ?>" class="<?php echo $this->bootstrapHelper->getClassMapping('btn'); ?> btn-primary">
-								<?php echo JText::_('OSM_SIGNUP'); ?>
-							</a>
-						</li>
-					<?php
+					    if (empty($item->upgrade_rules) || !$this->config->get('hide_signup_button_if_upgrade_available'))
+                        {
+	                    ?>
+                            <li>
+                                <a href="<?php echo $signUpUrl; ?>" class="<?php echo $this->bootstrapHelper->getClassMapping('btn'); ?> btn-primary">
+			                        <?php echo in_array($item->id, $subscribedPlanIds) ? JText::_('OSM_RENEW') : JText::_('OSM_SIGNUP'); ?>
+                                </a>
+                            </li>
+	                    <?php
+                        }
+
+                        if(!empty($item->upgrade_rules))
+						{
+							if (count($item->upgrade_rules) > 1)
+							{
+								$link = JRoute::_('index.php?option=com_osmembership&view=upgrademembership&to_plan_id=' . $item->id . '&Itemid=' . OSMembershipHelperRoute::findView('upgrademembership', $this->Itemid));
+							}
+							else
+							{
+								$upgradeOptionId = $item->upgrade_rules[0]->id;
+								$link            = JRoute::_('index.php?option=com_osmembership&task=register.process_upgrade_membership&upgrade_option_id=' . $upgradeOptionId . '&Itemid=' . $this->Itemid);
+							}
+							?>
+                            <li>
+                                <a href="<?php echo $link; ?>" class="<?php echo $this->bootstrapHelper->getClassMapping('btn'); ?> btn-primary">
+									<?php echo JText::_('OSM_UPGRADE'); ?>
+                                </a>
+                            </li>
+							<?php
+						}
 					}
 					?>
 				</ul>

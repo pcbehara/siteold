@@ -4,5 +4,11 @@
 		<message>
 			Display list of Schedule Content articles which the logged in subscriber can access to
 		</message>
-	</layout>		
+	</layout>
+	<fields name="request">
+		<fieldset name="request"
+				  addfieldpath="/administrator/components/com_osmembership/model/fields">
+			<field name="id" type="osmplan" size="3" default="0" label="Select Plan" description="Select Plan which you want to display schedule content for" />
+		</fieldset>
+	</fields>
 </metadata>

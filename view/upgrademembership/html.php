@@ -3,11 +3,11 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// Check to ensure this file is included in Joomla!
+
 defined('_JEXEC') or die;
 
 class OSMembershipViewUpgradeMembershipHtml extends MPFViewHtml
@@ -16,18 +16,13 @@ class OSMembershipViewUpgradeMembershipHtml extends MPFViewHtml
 
 	public function display()
 	{
-		$app = JFactory::getApplication();
+		$this->requestLogin('OSM_LOGIN_TO_UPGRADE_MEMBERSHIP');
 
-		$user = JFactory::getUser();
-		if (!$user->id)
-		{
-			$return = 'index.php?option=com_osmembership&view=upgrademembership&Itemid=' . $this->Itemid;
-			$app->redirect('index.php?option=com_users&view=login&return=' . base64_encode($return), JText::_('OSM_LOGIN_TO_UPGRADE_MEMBERSHIP'));
-		}
-
+		$app    = JFactory::getApplication();
+		$user   = JFactory::getUser();
 		$config = OSMembershipHelper::getConfig();
+		$item   = OSMembershipHelperSubscription::getMembershipProfile($user->id);
 
-		$item = OSMembershipHelperSubscription::getMembershipProfile($user->id);
 		if (!$item)
 		{
 			// Fix Profile ID
@@ -64,13 +59,42 @@ class OSMembershipViewUpgradeMembershipHtml extends MPFViewHtml
 
 		// Load js file to support state field dropdown
 		OSMembershipHelper::addLangLinkForAjax();
-		JFactory::getDocument()->addScript(JUri::base(true) . '/media/com_osmembership/assets/js/paymentmethods.min.js');
+		$document = JFactory::getDocument();
+		$rootUri  = JUri::root(true);
+		$document->addScript($rootUri . '/media/com_osmembership/assets/js/paymentmethods.min.js');
+
+		$customJSFile = JPATH_ROOT . '/media/com_osmembership/assets/js/custom.js';
+
+		if (file_exists($customJSFile) && filesize($customJSFile) > 0)
+		{
+			$document->addScript($rootUri . '/media/com_osmembership/assets/js/custom.js');
+		}
 
 		// Need to get subscriptions information of the user
-		$this->upgradeRules    = OSMembershipHelperSubscription::getUpgradeRules($item->user_id);
+		$toPlanId     = $this->input->getInt('to_plan_id');
+		$upgradeRules = OSMembershipHelperSubscription::getUpgradeRules($item->user_id);
+		$n            = count($upgradeRules);
+
+		if ($toPlanId > 0)
+		{
+			for ($i = 0; $i < $n; $i++)
+			{
+				$rule = $upgradeRules[$i];
+				if ($rule->to_plan_id != $toPlanId)
+				{
+					unset($upgradeRules[$i]);
+				}
+			}
+
+			$upgradeRules = array_values($upgradeRules);
+		}
+
+		$this->upgradeRules    = $upgradeRules;
 		$this->config          = $config;
 		$this->plans           = OSMembershipHelperDatabase::getAllPlans('id');
 		$this->bootstrapHelper = new OSMembershipHelperBootstrap($config->twitter_bootstrap_version);
+
+		$this->setLayout('default');
 
 		parent::display();
 	}

@@ -3,7 +3,7 @@
  * @package        Joomla
  * @subpackage     OSMembership
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
@@ -28,6 +28,20 @@ defined('_JEXEC') or die;
 				<th class="title center"><?php echo JText::_('OSM_ACCESSIBLE_ON'); ?></th>
 			</tr>
 			</thead>
+			<?php
+			if ($this->pagination->total > $this->pagination->limit)
+			{
+			?>
+				<tfoot>
+				<tr>
+					<td colspan="3">
+						<div class="pagination"><?php echo $this->pagination->getPagesLinks(); ?></div>
+					</td>
+				</tr>
+				</tfoot>
+			<?php
+			}
+			?>
 			<tbody>
 			<?php
 			foreach ($items as $item)

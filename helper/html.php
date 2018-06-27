@@ -1,5 +1,4 @@
 <?php
-
 /**
  * @package        Joomla
  * @subpackage     Membership Pro
@@ -7,8 +6,46 @@
  * @copyright      Copyright (C) 2002 - 2013 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
+
 abstract class OSMembershipHelperHtml
 {
+	/**
+	 * Render showon string
+	 *
+	 * @param array $fields
+	 *
+	 * @return string
+	 */
+	public static function renderShowon($fields)
+	{
+		$output = array();
+
+		$i = 0;
+
+		foreach ($fields as $name => $values)
+		{
+			$i++;
+
+			$values = (array) $values;
+
+			$data = array(
+				'field'  => $name,
+				'values' => $values
+			);
+
+			if (version_compare(JVERSION, '3.6.99', 'ge'))
+			{
+				$data['sign'] = '=';
+			}
+
+			$data['op'] = $i > 1 ? 'AND' : '';
+
+			$output[] = json_encode($data);
+		}
+
+		return '[' . implode(',', $output) . ']';
+	}
+
 	/**
 	 * Function to render a common layout which is used in different views
 	 *
@@ -33,11 +70,11 @@ abstract class OSMembershipHelperHtml
 		{
 			$path = $layout;
 		}
-		elseif (JFile::exists(JPATH_THEMES . '/' . $app->getTemplate() . '/html/com_osmembership/' . $themeFile))
+        elseif (JFile::exists(JPATH_THEMES . '/' . $app->getTemplate() . '/html/com_osmembership/' . $themeFile))
 		{
 			$path = JPATH_THEMES . '/' . $app->getTemplate() . '/html/com_osmembership/' . $themeFile;
 		}
-		elseif (JFile::exists(JPATH_ROOT . '/components/com_osmembership/view/' . $layout))
+        elseif (JFile::exists(JPATH_ROOT . '/components/com_osmembership/view/' . $layout))
 		{
 			$path = JPATH_ROOT . '/components/com_osmembership/view/' . $layout;
 		}
@@ -45,6 +82,7 @@ abstract class OSMembershipHelperHtml
 		{
 			throw new RuntimeException(JText::_('The given shared template path is not exist'));
 		}
+
 		// Start an output buffer.
 		ob_start();
 		extract($data);
@@ -56,6 +94,37 @@ abstract class OSMembershipHelperHtml
 		$output = ob_get_clean();
 
 		return $output;
+	}
+
+	public static function getPossibleLayouts($layout)
+	{
+		$layouts = [$layout];
+
+		$config = OSMembershipHelper::getConfig();
+
+		if (empty($config->twitter_bootstrap_version))
+		{
+			$twitterBootstrapVersion = 2;
+		}
+		else
+		{
+			$twitterBootstrapVersion = $config->twitter_bootstrap_version;
+		}
+
+		switch ($twitterBootstrapVersion)
+		{
+			case 2:
+				break;
+			case 3;
+			case 4:
+				array_unshift($layouts, $layout . '.bootstrap' . $twitterBootstrapVersion);
+				break;
+			default:
+				array_unshift($layouts, $layout . '.' . $twitterBootstrapVersion);
+				break;
+		}
+
+		return $layouts;
 	}
 
 	/**
@@ -77,6 +146,7 @@ abstract class OSMembershipHelperHtml
 		$db->setQuery($query);
 		$rows     = $db->loadObjectList();
 		$children = array();
+
 		if ($rows)
 		{
 			// first pass - collect children
@@ -88,9 +158,11 @@ abstract class OSMembershipHelperHtml
 				$children[$pt] = $list;
 			}
 		}
+
 		$list      = JHtml::_('menu.treerecurse', 0, '', array(), $children, 9999, 0, 0);
 		$options   = array();
 		$options[] = JHtml::_('select.option', '0', JText::_('OSM_SELECT_CATEGORY'));
+
 		foreach ($list as $item)
 		{
 			$options[] = JHtml::_('select.option', $item->id, '&nbsp;&nbsp;&nbsp;' . $item->treename);
@@ -102,7 +174,7 @@ abstract class OSMembershipHelperHtml
 				'option.text'        => 'text',
 				'option.value'       => 'value',
 				'list.attr'          => 'class="inputbox" ' . $attr,
-				'list.select'        => $selected, ));
+				'list.select'        => $selected,));
 	}
 
 	/**
@@ -144,12 +216,12 @@ abstract class OSMembershipHelperHtml
 				$result = $content;
 			}
 			// Use only the title, if title and text are the same.
-			elseif ($title == $content)
+            elseif ($title == $content)
 			{
 				$result = '<strong>' . $title . '</strong>';
 			}
 			// Use a formatted string combining the title and content.
-			elseif ($content != '')
+            elseif ($content != '')
 			{
 				$result = '<strong>' . $title . '</strong><br />' . $content;
 			}
@@ -174,10 +246,11 @@ abstract class OSMembershipHelperHtml
 	 * @param        $name
 	 * @param        $title
 	 * @param string $tooltip
+	 * @param bool   $required
 	 *
 	 * @return string
 	 */
-	public static function getFieldLabel($name, $title, $tooltip = '')
+	public static function getFieldLabel($name, $title, $tooltip = '', $required = false)
 	{
 		$label = '';
 		$text  = $title;
@@ -194,7 +267,7 @@ abstract class OSMembershipHelperHtml
 			$label .= ' title="' . self::tooltipText(trim($text, ':'), $tooltip, 0) . '"';
 		}
 
-		$label .= '>' . $text . '</label>';
+		$label .= '>' . $text . ($required ? '<span class="required">*</span>' : '') . '</label>';
 
 		return $label;
 	}
@@ -209,25 +282,32 @@ abstract class OSMembershipHelperHtml
 	 */
 	public static function getBooleanInput($name, $value)
 	{
-		$html = array();
+		JHtml::_('jquery.framework');
+		$field = JFormHelper::loadFieldType('Radio');
 
-		// Start the radio field output.
-		$html[] = '<fieldset id="' . $name . '" class="radio btn-group btn-group-yesno">';
+		$element = new SimpleXMLElement('<field />');
+		$element->addAttribute('name', $name);
 
-		// Yes Option
-		$checked = ($value == 1) ? ' checked="checked"' : '';
-		$html[]  = '<input type="radio" id="' . $name . '0" name="' . $name . '" value="1"' . $checked . ' />';
-		$html[]  = '<label for="' . $name . '0">' . JText::_('JYES') . '</label>';
+		if (version_compare(JVERSION, '4.0.0-dev', 'ge'))
+		{
+			$element->addAttribute('class', 'switcher');
+		}
+		else
+		{
+			$element->addAttribute('class', 'radio btn-group btn-group-yesno');
+		}
 
-		// No Option
-		$checked = ($value == 0) ? ' checked="checked"' : '';
-		$html[]  = '<input type="radio" id="' . $name . '1" name="' . $name . '" value="0"' . $checked . ' />';
-		$html[]  = '<label for="' . $name . '1">' . JText::_('JNO') . '</label>';
+		$element->addAttribute('default', '0');
 
-		// End the radio field output.
-		$html[] = '</fieldset>';
+		$node = $element->addChild('option', 'JNO');
+		$node->addAttribute('value', '0');
 
-		return implode($html);
+		$node = $element->addChild('option', 'JYES');
+		$node->addAttribute('value', '1');
+
+		$field->setup($element, (int) $value);
+
+		return $field->input;
 	}
 
 	/**
@@ -237,17 +317,15 @@ abstract class OSMembershipHelperHtml
 	 */
 	public static function renderSubmenu($vName = 'dashboard')
 	{
-	?>
-	<script language="javascript">
-		function confirmBuildTaxRules()
-		{
-			if (confirm('This will delete all tax rules you created and build EU tax rules. Are you sure ?'))
-			{
-				location.href = 'index.php?option=com_osmembership&task=build_eu_tax_rules';
-			}
-		}
-	</script>
-	<?php
+		?>
+        <script language="javascript">
+            function confirmBuildTaxRules() {
+                if (confirm('This will delete all tax rules you created and build EU tax rules. Are you sure ?')) {
+                    location.href = 'index.php?option=com_osmembership&task=tool.build_eu_tax_rules';
+                }
+            }
+        </script>
+		<?php
 		$db    = JFactory::getDbo();
 		$query = $db->getQuery(true);
 		$query->select('*')
@@ -258,9 +336,10 @@ abstract class OSMembershipHelperHtml
 		$db->setQuery($query);
 		$menus = $db->loadObjectList();
 		$html  = '';
-		$html .= '<ul id="mp-dropdown-menu" class="nav nav-tabs nav-hover">';
+		$html  .= '<ul id="mp-dropdown-menu" class="nav nav-tabs nav-hover">';
 
 		$currentLink = 'index.php' . JUri::getInstance()->toString(array('query'));
+
 		for ($i = 0; $n = count($menus), $i < $n; $i++)
 		{
 			$menu = $menus[$i];
@@ -272,47 +351,100 @@ abstract class OSMembershipHelperHtml
 				->order('ordering');
 			$db->setQuery($query);
 			$subMenus = $db->loadObjectList();
+
+			switch ($i)
+			{
+				case 2:
+				case  3:
+					$view = 'subscriptions';
+					break;
+				case 4:
+					$view = 'coupons';
+					break;
+				case 5:
+					$view = 'plugins';
+					break;
+				case 1:
+				case 6:
+				case 7:
+				case 8:
+					$view = 'configuration';
+					break;
+				default:
+					$view = '';
+					break;
+			}
+
+			if ($view && !OSMembershipHelper::canAccessThisView($view))
+			{
+				continue;
+			}
+
 			if (!count($subMenus))
 			{
-				$class = '';
+				$class      = '';
+				$extraClass = '';
+
 				if ($menu->menu_link == $currentLink)
 				{
-					$class = ' class="active"';
+					$class      = ' class="active"';
+					$extraClass = ' active';
 				}
-				$html .= '<li' . $class . '><a href="' . $menu->menu_link . '"><span class="icon-' . $menu->menu_class . '"></span> ' . JText::_($menu->menu_name) .
+
+				$html .= '<li' . $class . '><a href="' . $menu->menu_link . '" class="nav-link dropdown-item' . $extraClass . '"><span class="icon-' . $menu->menu_class . '"></span> ' . JText::_($menu->menu_name) .
 					'</a></li>';
 			}
 			else
 			{
 				$class = ' class="dropdown"';
+
 				for ($j = 0; $m = count($subMenus), $j < $m; $j++)
 				{
 					$subMenu = $subMenus[$j];
+
 					if ($subMenu->menu_link == $currentLink)
 					{
 						$class = ' class="dropdown active"';
 						break;
 					}
 				}
+
 				$html .= '<li' . $class . '>';
-				$html .= '<a id="drop_' . $menu->id . '" href="#" data-toggle="dropdown" role="button" class="dropdown-toggle"><span class="icon-' . $menu->menu_class . '"></span> ' .
+				$html .= '<a id="drop_' . $menu->id . '" href="#" data-toggle="dropdown" role="button" class="dropdown-toggle nav-link dropdown-toggle"><span class="icon-' . $menu->menu_class . '"></span> ' .
 					JText::_($menu->menu_name) . ' <b class="caret"></b></a>';
 				$html .= '<ul aria-labelledby="drop_' . $menu->id . '" role="menu" class="dropdown-menu" id="menu_' . $menu->id . '">';
+
 				for ($j = 0; $m = count($subMenus), $j < $m; $j++)
 				{
-					$subMenu = $subMenus[$j];
-					$class   = '';
+					$subMenu    = $subMenus[$j];
+					$class      = '';
+					$extraClass = '';
+
+					$vars = array();
+					parse_str($subMenu->menu_link, $vars);
+					$view = isset($vars['view']) ? $vars['view'] : '';
+
+					if ($view && !OSMembershipHelper::canAccessThisView($view))
+					{
+						continue;
+					}
+
 					if ($subMenu->menu_link == $currentLink)
 					{
-						$class = ' class="active"';
+						$class      = ' class="active"';
+						$extraClass = ' active';
 					}
-					$html .= '<li' . $class . '><a href="' . $subMenu->menu_link .
+
+
+					$html .= '<li' . $class . '><a class="nav-link dropdown-item' . $extraClass . '" href="' . $subMenu->menu_link .
 						'" tabindex="-1"><span class="icon-' . $subMenu->menu_class . '"></span> ' . JText::_($subMenu->menu_name) . '</a></li>';
 				}
+
 				$html .= '</ul>';
 				$html .= '</li>';
 			}
 		}
+
 		$html .= '</ul>';
 
 		echo $html;
@@ -328,41 +460,75 @@ abstract class OSMembershipHelperHtml
 	 */
 	public static function getArticleInput($fieldValue, $fieldName = 'article_id')
 	{
-		// Initialize variables.
-		JHtml::_('behavior.modal');
-		$link = 'index.php?option=com_content&amp;view=articles&amp;layout=modal&amp;tmpl=component&amp;' . JSession::getFormToken() . '=1';
-		$html = array();
-		?>
-		<script type="text/javascript">
-			function jSelectArticle(id, title, catid, object, link, lang) {
-				var old_id = document.getElementById('<?php echo $fieldName; ?>').value;
-				if (old_id != id) {
-					document.id('article_name').value = title;
-					document.getElementById('<?php echo $fieldName; ?>').value = id;
-					jModalClose();
-				}
-			}
-		</script>
-		<?php
-		$table = JTable::getInstance('content');
-		if ($fieldValue)
-		{
-			$table->load($fieldValue);
-		}
-		else
-		{
-			$table->title = '';
-		}
-		$html[] = '<div class="input-prepend input-append">';
-		$html[] = '<div class="media-preview add-on"><span title="" class="hasTipPreview"><span class="icon-eye"></span></span></div>';
-		$html[] = '	<input type="text" disabled="disabled" class="input-small hasTipImgpath" id="article_name"' . ' value="' . htmlspecialchars($table->title, ENT_COMPAT, 'UTF-8') . '"' .
-			' disabled="disabled"/>';
-		// Create the user select button.
-		$html[] = '<a title="" rel="{handler: \'iframe\', size: {x: 800, y: 500}}" data-toggle="modal" role="button" class="btn hasTooltip modal" href="' . $link . '" data-original-title="Select or Change article"><span class="icon-file"></span> Select</a>';
-		$html[] = '</div>';
-		// Create the real field, hidden, that stored the user id.
-		$html[] = '<input type="hidden" id="' . $fieldName . '" name="' . $fieldName . '" value="' . $fieldValue . '" />';
+		JHtml::_('jquery.framework');
+		JFormHelper::addFieldPath(JPATH_ADMINISTRATOR . '/components/com_content/models/fields');
+		$field = JFormHelper::loadFieldType('Modal_Article');
 
-		return implode("\n", $html);
+		$element = new SimpleXMLElement('<field />');
+		$element->addAttribute('name', $fieldName);
+		$element->addAttribute('select', 'true');
+		$element->addAttribute('clear', 'true');
+
+		$field->setup($element, $fieldValue);
+
+		return $field->input;
+	}
+
+	/**
+	 * Get human readable filesize
+	 *
+	 * @param string $file
+	 * @param int    $precision
+	 *
+	 * @return string
+	 */
+	public static function getFormattedFilezize($file, $precision = 2)
+	{
+		$bytes  = filesize($file);
+		$size   = array('B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB');
+		$factor = floor((strlen($bytes) - 1) / 3);
+
+		return sprintf("%.{$precision}f", $bytes / pow(1024, $factor)) . @$size[$factor];
+	}
+
+	/**
+	 * Get media input field type
+	 *
+	 * @param string $value
+	 * @param string $fieldName
+	 *
+	 * @return string
+	 */
+	public static function getMediaInput($value, $fieldName = 'image')
+	{
+		JHtml::_('jquery.framework');
+		$field = JFormHelper::loadFieldType('Media');
+
+		$element = new SimpleXMLElement('<field />');
+		$element->addAttribute('name', $fieldName);
+		$element->addAttribute('class', 'readonly input-large');
+		$element->addAttribute('preview', 'tooltip');
+		$element->addAttribute('directory', 'com_osmembership');
+
+		$form = JForm::getInstance('sample-form', '<form> </form>');
+		$field->setForm($form);
+		$field->setup($element, $value);
+
+		return $field->input;
+	}
+
+	/**
+	 * Get BootstrapHelper class for admin UI
+	 *
+	 * @return OSMembershipHelperBootstrap
+	 */
+	public static function getAdminBootstrapHelper()
+	{
+		if (version_compare(JVERSION, '4.0.0-dev', 'ge'))
+		{
+			return new OSMembershipHelperBootstrap('4');
+		}
+
+		return new OSMembershipHelperBootstrap('2');
 	}
 }

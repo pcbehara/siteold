@@ -3,11 +3,11 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// Check to ensure this file is included in Joomla!
+
 defined('_JEXEC') or die;
 
 /**
@@ -27,7 +27,9 @@ class OSMembershipViewSubscriptionHtml extends MPFViewHtml
 
 		if ($item->user_id != $user->get('id'))
 		{
-			JFactory::getApplication()->redirect('index.php', JText::_('OSM_INVALID_ACTION'));
+			$app = JFactory::getApplication();
+			$app->enqueueMessage(JText::_('OSM_INVALID_ACTION'));
+			$app->redirect(JUri::root(), 403);
 		}
 
 		//Form

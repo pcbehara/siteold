@@ -3,22 +3,32 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012-2014 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
+
+defined('_JEXEC') or die;
+
 OSMembershipHelperJquery::equalHeights();
-if (isset($config->number_columns))
+
+if (isset($input) && $input->getInt('number_columns'))
 {
-	$numberColumns = $config->number_columns ;
+	$numberColumns = $input->getInt('number_columns');
+}
+elseif (!empty($config->number_columns))
+{
+	$numberColumns = $config->number_columns;
 }
 else
 {
-	$numberColumns = 3 ;
+	$numberColumns = 3;
 }
+
 if (!isset($categoryId))
 {
 	$categoryId = 0;
 }
+
 $span = intval(12 / $numberColumns);
 $btnClass = $bootstrapHelper->getClassMapping('btn');
 $imgClass = $bootstrapHelper->getClassMapping('img-polaroid');
@@ -30,6 +40,10 @@ $rowFluidClass = $bootstrapHelper->getClassMapping('row-fluid');
 $i = 0;
 $numberPlans = count($items);
 $defaultItemId = $Itemid;
+
+$subscribedPlanIds = OSMembershipHelperSubscription::getSubscribedPlans();
+$exclusivePlanIds = OSMembershipHelperSubscription::getExclusivePlanIds();
+
 foreach ($items as $item)
 {
 	$i++;
@@ -65,7 +79,9 @@ foreach ($items as $item)
 				if ($item->thumb)
 				{
 				?>
+				<a href="<?php echo $url; ?>" title="<?php echo $item->title; ?>">	
 					<img src="<?php echo $imgSrc; ?>" class="osm-thumb-left <?php echo $imgClass; ?>" />
+				</a>	
 				<?php
 				}
 				if (!$item->short_description)
@@ -77,16 +93,40 @@ foreach ($items as $item)
 				 <div class="osm-taskbar clearfix">
 					<ul>
 						<?php
-						if (OSMembershipHelper::canSubscribe($item))
+						if (OSMembershipHelper::canSubscribe($item) && (!in_array($item->id, $exclusivePlanIds) || in_array($item->id, $subscribedPlanIds)))
 						{
-						?>
-							<li>
-								<a href="<?php echo $signUpUrl; ?>" class="<?php echo $btnClass; ?> btn-primary">
-									<?php echo JText::_('OSM_SIGNUP'); ?>
-								</a>
-							</li>
-						<?php
+							if (empty($item->upgrade_rules) || !$config->get('hide_signup_button_if_upgrade_available'))
+                            {
+	                        ?>
+                                <li>
+                                    <a href="<?php echo $signUpUrl; ?>" class="<?php echo $btnClass; ?> btn-primary">
+			                            <?php echo in_array($item->id, $subscribedPlanIds) ? JText::_('OSM_RENEW') : JText::_('OSM_SIGNUP'); ?>
+                                    </a>
+                                </li>
+	                        <?php
+                            }
+
+                            if(!empty($item->upgrade_rules))
+							{
+								if (count($item->upgrade_rules) > 1)
+								{
+									$link = JRoute::_('index.php?option=com_osmembership&view=upgrademembership&to_plan_id=' . $item->id . '&Itemid=' . OSMembershipHelperRoute::findView('upgrademembership', $Itemid));
+								}
+								else
+								{
+									$upgradeOptionId = $item->upgrade_rules[0]->id;
+									$link            = JRoute::_('index.php?option=com_osmembership&task=register.process_upgrade_membership&upgrade_option_id=' . $upgradeOptionId . '&Itemid=' . $Itemid);
+								}
+								?>
+                                <li>
+                                    <a href="<?php echo $link; ?>" class="<?php echo $btnClass; ?> btn-primary">
+										<?php echo JText::_('OSM_UPGRADE'); ?>
+                                    </a>
+                                </li>
+								<?php
+							}
 						}
+
 						if (empty($config->hide_details_button))
 						{
 						?>

@@ -3,11 +3,10 @@
  * @package        Joomla
  * @subpackage     OSMembership
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// no direct access
 defined('_JEXEC') or die;
 
 class OSMembershipControllerValidator extends MPFController
@@ -19,15 +18,23 @@ class OSMembershipControllerValidator extends MPFController
 	{
 		$db         = JFactory::getDbo();
 		$query      = $db->getQuery(true);
+		$userId     = JFactory::getUser()->id;
 		$username   = $this->input->getString('fieldValue');
 		$validateId = $this->input->getString('fieldId');
 		$query->select('COUNT(*)')
 			->from('#__users')
-			->where('username=' . $db->quote($username));
+			->where('username = ' . $db->quote($username));
+
+		if ($userId > 0)
+		{
+			$query->where('id != ' . (int) $userId);
+		}
+
 		$db->setQuery($query);
 		$total        = $db->loadResult();
 		$arrayToJs    = array();
 		$arrayToJs[0] = $validateId;
+
 		if ($total)
 		{
 			$arrayToJs[1] = false;
@@ -36,7 +43,9 @@ class OSMembershipControllerValidator extends MPFController
 		{
 			$arrayToJs[1] = true;
 		}
+
 		echo json_encode($arrayToJs);
+
 		$this->app->close();
 	}
 
@@ -53,21 +62,25 @@ class OSMembershipControllerValidator extends MPFController
 		$arrayToJs    = array();
 		$arrayToJs[0] = $validateId;
 		$arrayToJs[1] = true;
-		if (JFactory::getApplication()->isSite() && $config->registration_integration && !$user->id)
+
+		if ($this->app->isSite() && $config->registration_integration && !$user->id)
 		{
 			$db    = JFactory::getDbo();
 			$query = $db->getQuery(true);
 			$query->select('COUNT(*)')
 				->from('#__users')
-				->where('email=' . $db->quote($email));
+				->where('email = ' . $db->quote($email));
 			$db->setQuery($query);
 			$total = $db->loadResult();
+
 			if ($total)
 			{
 				$arrayToJs[1] = false;
 			}
 		}
+
 		echo json_encode($arrayToJs);
+
 		$this->app->close();
 	}
 
@@ -83,11 +96,12 @@ class OSMembershipControllerValidator extends MPFController
 		$validateId = $this->input->get('fieldId', '', 'string');
 		$query->select('COUNT(*)')
 			->from('#__users')
-			->where('email="' . $email . '"');
+			->where('email = ' . $db->quote($email));
 		$db->setQuery($query);
 		$total        = $db->loadResult();
 		$arrayToJs    = array();
 		$arrayToJs[0] = $validateId;
+
 		if (!$total)
 		{
 			$arrayToJs[1] = true;
@@ -96,7 +110,9 @@ class OSMembershipControllerValidator extends MPFController
 		{
 			$arrayToJs[1] = false;
 		}
+
 		echo json_encode($arrayToJs);
+
 		$this->app->close();
 	}
 
@@ -108,10 +124,12 @@ class OSMembershipControllerValidator extends MPFController
 		//Load language from user component
 		$lang = JFactory::getLanguage();
 		$tag  = $lang->getTag();
+
 		if (!$tag)
 		{
 			$tag = 'en-GB';
 		}
+
 		$lang->load('com_users', JPATH_ROOT, $tag);
 		$value            = $this->input->get('fieldValue', '', 'none');
 		$validateId       = $this->input->get('fieldId', '', 'none');
@@ -121,6 +139,7 @@ class OSMembershipControllerValidator extends MPFController
 		$minimumUppercase = $params->get('minimum_uppercase');
 		$validPassword    = true;
 		$errorMessage     = '';
+
 		if (!empty($minimumIntegers))
 		{
 			$nInts = preg_match_all('/[0-9]/', $value, $imatch);
@@ -131,6 +150,7 @@ class OSMembershipControllerValidator extends MPFController
 				$validPassword = false;
 			}
 		}
+
 		if ($validPassword && !empty($minimumSymbols))
 		{
 			$nsymbols = preg_match_all('[\W]', $value, $smatch);
@@ -141,17 +161,22 @@ class OSMembershipControllerValidator extends MPFController
 				$validPassword = false;
 			}
 		}
+
+
 		if ($validPassword && !empty($minimumUppercase))
 		{
 			$nUppercase = preg_match_all("/[A-Z]/", $value, $umatch);
+
 			if ($nUppercase < $minimumUppercase)
 			{
 				$errorMessage  = JText::plural('COM_USERS_MSG_NOT_ENOUGH_UPPERCASE_LETTERS_N', $minimumUppercase);
 				$validPassword = false;
 			}
 		}
+
 		$arrayToJs    = array();
 		$arrayToJs[0] = $validateId;
+
 		if (!$validPassword)
 		{
 			$arrayToJs[1] = false;
@@ -161,7 +186,9 @@ class OSMembershipControllerValidator extends MPFController
 		{
 			$arrayToJs[1] = true;
 		}
+
 		echo json_encode($arrayToJs);
+
 		$this->app->close();
 	}
 }

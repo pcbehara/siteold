@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+	<layout title="User's Documents">
+		<message>
+			Display list of documents which the current logged in subscriber can login to download
+		</message>
+	</layout>		
+</metadata>

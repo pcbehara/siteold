@@ -3,10 +3,9 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined('_JEXEC') or die;
 
 /**
@@ -29,9 +28,11 @@ class OSMembershipViewCategoriesHtml extends MPFViewHtml
 		if ($categoryId)
 		{
 			$category = OSMembershipHelperDatabase::getCategory($categoryId);
+
 			if (empty($category) || !in_array($category->access, JFactory::getUser()->getAuthorisedViewLevels()))
 			{
-				$app->redirect('index.php', JText::_('OSM_INVALID_CATEGORY_OR_NOT_AUTHORIZED'));
+				$app->enqueueMessage(JText::_('OSM_INVALID_CATEGORY_OR_NOT_AUTHORIZED'));
+				$app->redirect(JUri::root(), 404);
 			}
 
 			$this->category = $category;

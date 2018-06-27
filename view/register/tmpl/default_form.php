@@ -3,7 +3,7 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 defined('_JEXEC') or die ;
@@ -44,9 +44,7 @@ if (!$this->userId && $this->config->registration_integration)
 	?>
 		<div class="<?php echo $controlGroupClass ?>">
 			<div class="<?php echo $controlLabelClass; ?>">
-				<label for="username1">
-					<?php echo  JText::_('OSM_USERNAME') ?><span class="required">*</span>
-				</label>
+				<?php echo OSMembershipHelperHtml::getFieldLabel('username1', JText::_('OSM_USERNAME'), JText::_('OSM_USERNAME_TOOLTIP'), true); ?>
 			</div>
 			<div class="<?php echo $controlsClass; ?>">
 				<input type="text" name="username" id="username1" class="validate[required,minSize[2],ajax[ajaxUserCall]]" value="<?php echo $this->escape($this->input->post->getUsername('username')); ?>" size="15" autocomplete="off"/>
@@ -62,10 +60,7 @@ if (!$this->userId && $this->config->registration_integration)
 	?>
 	<div class="<?php echo $controlGroupClass ?>">
 		<div class="<?php echo $controlLabelClass; ?>">
-			<label for="password1">
-				<?php echo  JText::_('OSM_PASSWORD') ?>
-				<span class="required">*</span>
-			</label>
+			<?php echo OSMembershipHelperHtml::getFieldLabel('password1', JText::_('OSM_PASSWORD'), JText::_('OSM_PASSWORD_TOOLTIP'), true); ?>
 		</div>
 		<div class="<?php echo $controlsClass; ?>">
 			<input value="" class="validate[required<?php echo $minSize.$passwordValidation;?>] text-input osm_inputbox inputbox" type="password" name="password1" id="password1" autocomplete="off"/>

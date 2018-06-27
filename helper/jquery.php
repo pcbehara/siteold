@@ -3,9 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
+
 defined('_JEXEC') or die;
 
 abstract class OSMembershipHelperJquery
@@ -15,6 +16,13 @@ abstract class OSMembershipHelperJquery
 	 */
 	public static function validateForm()
 	{
+		if (OSmembershipHelper::isMethodOverridden('OSMembershipHelperOverrideJquery', 'validateForm'))
+		{
+			OSMembershipHelperOverrideJquery::validateForm();
+
+			return;
+		}
+
 		$document    = JFactory::getDocument();
 		$config      = OSMembershipHelper::getConfig();
 		$dateFormat  = $config->date_field_format ? $config->date_field_format : '%Y-%m-%d';
@@ -45,12 +53,12 @@ abstract class OSMembershipHelperJquery
 		$monthIndex = array_search('m', $dateParts);
 		$dayIndex   = array_search('d', $dateParts);
 
-		$regex 	 = $dateFormat;
-		$regex   = str_replace($separator, '[\\' . $separator . ']', $regex);
-		$regex   = str_replace('d', '(0?[1-9]|[12][0-9]|3[01])', $regex);
-		$regex   = str_replace('Y', '(\d{4})', $regex);
-		$regex   = str_replace('m', '(0?[1-9]|1[012])', $regex);
-		$regex   = 'var pattern = new RegExp(/^' . $regex . '$/);';
+		$regex = $dateFormat;
+		$regex = str_replace($separator, '[\\' . $separator . ']', $regex);
+		$regex = str_replace('d', '(0?[1-9]|[12][0-9]|3[01])', $regex);
+		$regex = str_replace('Y', '(\d{4})', $regex);
+		$regex = str_replace('m', '(0?[1-9]|1[012])', $regex);
+		$regex = 'var pattern = new RegExp(/^' . $regex . '$/);';
 
 		$siteUrl = OSMembershipHelper::getSiteUrl();
 		$rootUri = JUri::root(true);
@@ -68,7 +76,6 @@ abstract class OSMembershipHelperJquery
 			    $.validationEngineLanguage = {
 			        newLang: function(){
 			            $.validationEngineLanguage.allRules = {
-
 			                "required": { // Add your regex rules here, you can take telephone as an example
 			                    "regex": "none",
 			                    "alertText": "' . JText::_('OSM_FIELD_REQUIRED') . '",
@@ -76,7 +83,6 @@ abstract class OSMembershipHelperJquery
 			                    "alertTextCheckboxe": "' . JText::_('OSM_CHECKBOX_REQUIRED') . '",
 			                    "alertTextDateRange": "' . JText::_('OSM_BOTH_DATE_RANGE_FIELD_REQUIRED') . '"
 			                },
-
 			                "requiredInFunction": {
 			                    "func": function(field, rules, i, options){
 			                        return (field.val() == "test") ? true : false;
@@ -149,7 +155,7 @@ abstract class OSMembershipHelperJquery
 			                "email": {
 			                    // HTML5 compatible email regex ( http://www.whatwg.org/specs/web-apps/current-work/multipage/states-of-the-type-attribute.html#    e-mail-state-%28type=email%29 )
 			                    "regex": /^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
-			                    "alertText": "' . JText::_('OSM_OVERRIDE_INVALID_EMAIL_ADDRESS') . '"
+			                    "alertText": "' . JText::_('OSM_INVALID_EMAIL_ADDRESS') . '"
 			                },
 			                "integer": {
 			                    "regex": /^[\-\+]?\d+$/,
@@ -218,7 +224,7 @@ abstract class OSMembershipHelperJquery
 			                },
 							"ajaxValidatePassword": {
 			                	"url": "' . $siteUrl . 'index.php?option=com_osmembership&task=validator.validate_password",
-			                    "alertText": "' . JText::_('OSM_INVALID_PASSWORD_LEE') . '",
+			                    "alertText": "' . JText::_('OSM_INVALID_PASSWORD') . '",
 			                },
 				            //tls warning:homegrown not fielded
 			                "dateFormat":{
@@ -247,9 +253,7 @@ abstract class OSMembershipHelperJquery
 
 	public static function addScript($sources)
 	{
-		$script = '<script type="text/javascript" src="' . $sources . '"></script>';
-		
-		echo $script;
+		echo '<script type="text/javascript" src="' . $sources . '"></script>';
 	}
 
 	/**
@@ -272,11 +276,13 @@ abstract class OSMembershipHelperJquery
 	public static function equalHeights()
 	{
 		static $loaded = false;
+
 		if (!$loaded)
 		{
 			$script = 'OSM.jQuery(function($) { $.fn.equalHeights = function(minHeight, maxHeight) { tallest = (minHeight) ? minHeight : 0;this.each(function() {if($(this).height() > tallest) {tallest = $(this).height();}});if((maxHeight) && tallest > maxHeight) tallest = maxHeight;return this.each(function() {$(this).height(tallest).css("overflow","auto");});}});';
 			JFactory::getDocument()->addScriptDeclaration($script);
 		}
+
 		$loaded = true;
 	}
 }

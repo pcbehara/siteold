@@ -3,11 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// no direct access
 defined('_JEXEC') or die;
 
 class os_payment
@@ -189,4 +188,3 @@ class os_payment
 		$lang->load($pluginName, JPATH_ROOT, $tag);
 	}
 }
-?>

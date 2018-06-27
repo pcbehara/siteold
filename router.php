@@ -3,12 +3,14 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
+
 defined('_JEXEC') or die;
-require_once JPATH_ROOT . '/components/com_osmembership/helper/route.php';
+
+// Require library + register autoloader
+require_once JPATH_ADMINISTRATOR . '/components/com_osmembership/loader.php';
 
 /**
  * Routing class from com_osmembership
@@ -161,6 +163,10 @@ class OSMembershipRouter extends JComponentRouterBase
 				$segments[] = 'Subscription Detail';
 				unset($query['view']);
 				break;
+			case 'card':
+				$segments[] = 'update card';
+				unset($query['view']);
+				break;
 		}
 
 		if ($task == 'renew_membership')
@@ -196,7 +202,7 @@ class OSMembershipRouter extends JComponentRouterBase
 
 			$queryString = http_build_query($queryArr);
 			$db          = JFactory::getDbo();
-			$segments    = array_map('JApplication::stringURLSafe', $segments);
+			$segments    = array_map('JApplicationHelper::stringURLSafe', $segments);
 			$key         = md5(implode('/', $segments));
 			$q           = $db->getQuery(true);
 			$q->select('COUNT(*)')
@@ -241,9 +247,15 @@ class OSMembershipRouter extends JComponentRouterBase
 				->where('md5_key="' . $key . '"');
 			$db->setQuery($query);
 			$queryString = $db->loadResult();
+
 			if ($queryString)
 			{
 				parse_str(html_entity_decode($queryString), $vars);
+			}
+
+			if (version_compare(JVERSION, '4.0.0-dev', 'ge'))
+			{
+				$segments = [];
 			}
 		}
 

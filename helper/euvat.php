@@ -3,10 +3,10 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
+
 class OSMembershipHelperEuvat
 {
 	public static $europeanUnionVATInformation = array(
@@ -55,6 +55,12 @@ class OSMembershipHelperEuvat
 	{
 		$countryCode = strtoupper($countryCode);
 
+		// Special case for Greece
+		if ($countryCode == 'EL')
+		{
+			return true;
+		}
+
 		return array_key_exists($countryCode, self::$europeanUnionVATInformation);
 	}
 
@@ -68,6 +74,7 @@ class OSMembershipHelperEuvat
 	public static function getEUCountryTaxRate($countryCode)
 	{
 		$countryCode = strtoupper($countryCode);
+
 		if (isset(self::$europeanUnionVATInformation[$countryCode]))
 		{
 			return self::$europeanUnionVATInformation[$countryCode][2];
@@ -87,11 +94,14 @@ class OSMembershipHelperEuvat
 	{
 		$id = strtoupper($id);
 		$id = preg_replace('/[ -,.]/', '', $id);
+
 		if (strlen($id) < 8)
 		{
 			return false;
 		}
+
 		$country = substr($id, 0, 2);
+
 		switch ($country)
 		{
 			case 'AT': // AUSTRIA
@@ -232,34 +242,105 @@ class OSMembershipHelperEuvat
 		// Use web service to validate the VAT number
 		$countryCode = substr($vatNumber, 0, 2);
 		$number      = substr($vatNumber, 2);
-		if (class_exists('SoapClient'))
-		{
-			$client = new SoapClient("http://ec.europa.eu/taxation_customs/vies/checkVatService.wsdl");
-			$rs     = $client->checkVat(array(
-					'countryCode' => $countryCode,
-					'vatNumber'   => $number, )
-			);
+		$key         = $countryCode . $number;
 
-			return $rs->valid;
+		$validatedVatNumbers = JFactory::getSession()->get('osm_validated_eu_vat_numbers');
+
+		if ($validatedVatNumbers)
+		{
+			$validatedVatNumbers = json_decode($validatedVatNumbers, true);
 		}
 		else
 		{
-			$url = "http://ec.europa.eu/taxation_customs/vies/viesquer.do?ms=" . $countryCode . "&vat=" . $number;
-			$ch  = curl_init($url);
-			curl_setopt($ch, CURLOPT_URL, $url);
-			curl_setopt($ch, CURLOPT_HEADER, 0);
-			curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-			$resp = curl_exec($ch);
-			curl_close($ch);
-			if (strpos($resp, '="validStyle"') !== false)
+			$validatedVatNumbers = [];
+		}
+
+		if (array_key_exists($key, $validatedVatNumbers))
+		{
+			return $validatedVatNumbers[$key];
+		}
+
+		$ret = null;
+
+		if (class_exists('SoapClient'))
+		{
+			try
 			{
-				return true;
+				$sOptions = array(
+					'user_agent'         => 'PHP',
+					'connection_timeout' => 5,
+				);
+				$sClient  = new SoapClient('http://ec.europa.eu/taxation_customs/vies/checkVatService.wsdl', $sOptions);
+				$params   = array('countryCode' => $countryCode, 'vatNumber' => $number);
+
+				for ($i = 0; $i < 2; $i++)
+				{
+					$response = $sClient->checkVat($params);
+
+					if (is_object($response))
+					{
+						$ret = ($response->valid ? true : false);
+						break;
+					}
+					else
+					{
+						sleep(1);
+					}
+				}
 			}
-			else
+			catch (SoapFault $e)
 			{
-				return false;
 			}
 		}
+
+		if (is_null($ret))
+		{
+			try
+			{
+				$http = JHttpFactory::getHttp();
+				$url  = 'http://ec.europa.eu/taxation_customs/vies/viesquer.do?locale=en'
+					. '&ms=' . urlencode($countryCode)
+					. '&iso=' . urlencode($countryCode)
+					. '&vat=' . urlencode($number);
+
+				for ($i = 0; $i < 2; $i++)
+				{
+					$response = $http->get($url, null, 5);
+
+					if ($response->code >= 200 && $response->code < 400)
+					{
+						if (preg_match('/invalid VAT number/i', $response->body))
+						{
+							$ret = false;
+							break;
+						}
+						elseif (preg_match('/valid VAT number/i', $response->body))
+						{
+							$ret = true;
+							break;
+						}
+					}
+					else
+					{
+						sleep(1);
+					}
+				}
+			}
+			catch (\RuntimeException $e)
+			{
+			}
+		}
+
+		if (is_null($ret))
+		{
+			$ret = false;
+		}
+
+		// Cache the data
+		$validatedVatNumbers[$key] = $ret;
+
+		JFactory::getSession()->set('osm_validated_eu_vat_numbers', json_encode($validatedVatNumbers));
+
+		return $ret;
 	}
 }

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <metadata>
-	<layout title="Pricing Table Layout">
+	<layout title="Pricing table layout">
 		<message>
-			Displays a list of subscription plans in Pricing Table Layout. Only used this one if you only have 3 or 4 plans
+			Displays a list of subscription plans in pricing table layout
 		</message>
 	</layout>		
 	<fields name="request">			

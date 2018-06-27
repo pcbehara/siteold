@@ -6,7 +6,6 @@
  * @copyright      Copyright (C) 2012 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
 defined( '_JEXEC' ) or die ;
 $selectedState = '';
 $bootstrapHelper = $this->bootstrapHelper;
@@ -63,15 +62,16 @@ OSMembershipHelperJquery::validateForm();
 			$minimumLength = $params->get('minimum_length', 4);
 			($minimumLength) ? $minSize = ",minSize[$minimumLength]" : $minSize = "";
 			$passwordValidation = ',ajax[ajaxValidatePassword]';
-			if ($this->showExistingUsers)
+
+			if (!empty($this->config->enable_select_existing_users))
 			{
 			?>
 				<div class="<?php echo $controlGroupClass; ?>">
 					<label class="<?php echo $controlLabelClass; ?>" for="username1">
-						<?php echo  JText::_('OSM_EXISTING_GROUP_MEMBER') ?>
+						<?php echo  JText::_('OSM_SELECT_USER') ?>
 					</label>
 					<div class="<?php echo $controlsClass; ?>">
-						<?php echo $this->lists['user_id']; ?>
+						<?php echo OSMembershipHelper::getUserInput($this->item->user_id, (int) $this->item->id) ; ?>
 					</div>
 				</div>
 			<?php
@@ -130,6 +130,7 @@ OSMembershipHelperJquery::validateForm();
 		{
 			$emailField = $fields['email'];
 			$cssClass = $emailField->getAttribute('class');
+
 			if ($this->item->id)
 			{
 				// No validation
@@ -139,11 +140,17 @@ OSMembershipHelperJquery::validateForm();
 			{
 				$cssClass = str_replace('ajax[ajaxEmailCall]', 'ajax[ajaxValidateGroupMemberEmail]', $cssClass);
 			}
+
 			$emailField->setAttribute('class', $cssClass);
 		}
+
 		foreach ($fields as $field)
 		{
-			echo $field->getControlGroup($bootstrapHelper);
+			/* @var MPFFormField $field */
+			if ($field->row->show_on_group_member_form)
+			{
+				echo $field->getControlGroup($bootstrapHelper);
+			}
 		}
 	?>
 	<div class="form-actions">
@@ -151,13 +158,13 @@ OSMembershipHelperJquery::validateForm();
 		<img id="ajax-loading-animation" src="<?php echo JUri::base();?>media/com_osmembership/ajax-loadding-animation.gif" style="display: none;"/>
 	</div>
 <div class="clearfix"></div>
-	<input type="hidden" name="cid[]" value="<?php echo $this->item->id; ?>" />
-	<input type="hidden" id="member_id" value="<?php echo $this->item->id; ?>" />
+	<input type="hidden" name="cid[]" value="<?php echo (int) $this->item->id; ?>" />
+	<input type="hidden" id="member_id" value="<?php echo (int) $this->item->id; ?>" />
 	<?php
 	if (isset($this->plan))
 	{
 	?>
-		<input type="hidden" name="plan_id" value="<?php echo $this->plan->id; ?>" />
+		<input type="hidden" id="plan_id" name="plan_id" value="<?php echo $this->plan->id; ?>" />
 	<?php
 	}
 	?>
@@ -167,33 +174,24 @@ OSMembershipHelperJquery::validateForm();
 			$(document).ready(function(){
 				OSMVALIDATEFORM("#os_form");
 				buildStateField('state', 'country', '<?php echo $selectedState; ?>');
-				$('#user_id').change(function(){
-					changeGroupMember($(this).val())
-					populateGroupMemberData($(this).val(),$('#plan_id').val());
-				})
-			})
-			changeGroupMember = (function(userId){
-				if(userId == 0)
-				{
-					$('.member-existing').slideDown('slow');
-					// Clear input data
-					$('#os_form').find("input[type=text], input[type=password], textarea").val("");
-				}
-				else
-				{
-					$('.member-existing').slideUp('slow');
-				}
-			})
-			populateGroupMemberData = (function(id, planId){
+			});
+
+			populateSubscriberData = (function(){
+				var id = $('#user_id').val();
+				var planId = $('#plan_id').val();
+				$('.member-existing').slideUp('slow');
+				$('#username1 #password1 #password2').val('');
+
 				$.ajax({
 					type : 'POST',
-					url : 'index.php?option=com_osmembership&task=groupmember.get_member_data&user_id=' + id + '&plan_id=' +planId,
+					url : 'index.php?option=com_osmembership&task=get_profile_data&user_id=' + id + '&plan_id=' +planId,
 					dataType: 'json',
 					success : function(json){
 						var selecteds = [];
 						for (var field in json)
 						{
 							value = json[field];
+
 							if ($("input[name='" + field + "[]']").length)
 							{
 								//This is a checkbox or multiple select
@@ -216,7 +214,9 @@ OSMembershipHelperJquery::validateForm();
 								$('#' + field).val(value);
 							}
 						}
-						if (id == 0 && $('#member_id').val() == 0)
+
+
+						if (id == 0)
 						{
 							$('#email').attr('class','class="validate[required,custom[email],ajax[ajaxValidateGroupMemberEmail]]"').removeAttr('readonly')
 						}
@@ -224,9 +224,11 @@ OSMembershipHelperJquery::validateForm();
 						{
 							$('#email').removeAttr('class').attr('readonly','readonly');
 						}
+
 					}
 				})
 			});
+
 		});
 	</script>
 </form>

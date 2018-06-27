@@ -3,41 +3,37 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// Check to ensure this file is included in Joomla!
+
 defined('_JEXEC') or die;
 
 class OSMembershipViewProfileHtml extends MPFViewHtml
 {
 	public function display()
 	{
-		$user = JFactory::getUser();
-		if (!$user->id)
-		{
-			$return = 'index.php?option=com_osmembership&view=profile&Itemid=' . $this->Itemid;
-			JFactory::getApplication()->redirect('index.php?option=com_users&view=login&return=' . base64_encode($return), JText::_('OSM_LOGIN_TO_EDIT_PROFILE'));
-		}
+		$this->requestLogin('OSM_LOGIN_TO_EDIT_PROFILE');
 
+		/* @var JApplicationSite $app */
+		$app    = JFactory::getApplication();
+		$user   = JFactory::getUser();
 		$config = OSMembershipHelper::getConfig();
-		$item = OSMembershipHelperSubscription::getMembershipProfile($user->id);
+		$item   = OSMembershipHelperSubscription::getMembershipProfile($user->id);
+
 		if (!$item)
 		{
 			if (OSMembershipHelperSubscription::fixProfileId($user->id))
 			{
 				// Redirect to current page after fixing the data
-				JFactory::getApplication()->redirect(JUri::getInstance()->toString());
+				$app->redirect(JUri::getInstance()->toString());
 			}
 			else
 			{
-				$redirectURL = OSMembershipHelper::getViewUrl(array('categories', 'plans', 'plan', 'register'));
-				if (!$redirectURL)
-				{
-					$redirectURL = 'index.php';
-				}
-				JFactory::getApplication()->redirect($redirectURL, JText::_('OSM_DONOT_HAVE_SUBSCRIPTION_RECORD'));
+				// User don't have any active subscription, redirect to user profile page
+				$app->enqueueMessage(JText::_('OSM_DONOT_HAVE_SUBSCRIPTION_RECORD'));
+				$app->redirect(JRoute::_('index.php?option=com_users&view=profile', false));
 			}
 		}
 
@@ -55,7 +51,7 @@ class OSMembershipViewProfileHtml extends MPFViewHtml
 		}
 
 		// Get subscriptions history
-		require_once JPATH_ROOT . '/components/com_osmembership/model/subscriptions.php';
+		/* @var OSMembershipModelSubscriptions $model */
 		$model = JModelLegacy::getInstance('Subscriptions', 'OSMembershipModel');
 		$items = $model->getData();
 
@@ -77,14 +73,14 @@ class OSMembershipViewProfileHtml extends MPFViewHtml
 
 		// Trigger third party add-on
 		JPluginHelper::importPlugin('osmembership');
-		$dispatcher = JEventDispatcher::getInstance();
-		$results    = $dispatcher->trigger('onProfileDisplay', array($item));
+		$results = $app->triggerEvent('onProfileDisplay', array($item));
 
 		if ($item->group_admin_id == 0)
 		{
 			list($planIds, $renewOptions) = OSMembershipHelperSubscription::getRenewOptions($user->id);
 
 			$this->upgradeRules = OSMembershipHelperSubscription::getUpgradeRules($item->user_id);
+
 			$this->planIds      = $planIds;
 			$this->renewOptions = $renewOptions;
 			$this->plans        = OSMembershipHelperDatabase::getAllPlans('id');
@@ -92,7 +88,16 @@ class OSMembershipViewProfileHtml extends MPFViewHtml
 
 		// Load js file to support state field dropdown
 		OSMembershipHelper::addLangLinkForAjax();
-		JFactory::getDocument()->addScript(JUri::base(true) . '/media/com_osmembership/assets/js/paymentmethods.min.js');
+		$document = JFactory::getDocument();
+		$rootUri  = JUri::root(true);
+		$document->addScript($rootUri . '/media/com_osmembership/assets/js/paymentmethods.min.js');
+
+		$customJSFile = JPATH_ROOT . '/media/com_osmembership/assets/js/custom.js';
+
+		if (file_exists($customJSFile) && filesize($customJSFile) > 0)
+		{
+			$document->addScript($rootUri . '/media/com_osmembership/assets/js/custom.js');
+		}
 
 		// Need to get subscriptions information of the user
 		$this->item            = $item;
@@ -102,6 +107,7 @@ class OSMembershipViewProfileHtml extends MPFViewHtml
 		$this->plugins         = $results;
 		$this->subscriptions   = OSMembershipHelper::getSubscriptions($item->profile_id);
 		$this->bootstrapHelper = new OSMembershipHelperBootstrap($config->twitter_bootstrap_version);
+		$this->params          = $app->getParams();
 
 		parent::display();
 	}

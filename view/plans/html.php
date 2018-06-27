@@ -3,11 +3,11 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
 
-// Check to ensure this file is included in Joomla!
+
 defined('_JEXEC') or die;
 
 /**
@@ -29,11 +29,15 @@ class OSMembershipViewPlansHtml extends MPFViewHtml
 		{
 			$item    = $items[$i];
 			$taxRate = OSMembershipHelper::calculateTaxRate($item->id);
+
 			if ($config->show_price_including_tax && $taxRate > 0)
 			{
 				$item->price        = $item->price * (1 + $taxRate / 100);
 				$item->trial_amount = $item->trial_amount * (1 + $taxRate / 100);
+
+				$item->setup_fee        = $item->setup_fee * (1 + $taxRate / 100);
 			}
+
 			$item->short_description = JHtml::_('content.prepare', $item->short_description);
 			$item->description       = JHtml::_('content.prepare', $item->description);
 		}
@@ -64,47 +68,10 @@ class OSMembershipViewPlansHtml extends MPFViewHtml
 		// Process page title and meta data
 		$active = JFactory::getApplication()->getMenu()->getActive();
 		$params = OSMembershipHelper::getViewParams($active, array('plans'));
+
 		if ($active)
 		{
-			$document  = JFactory::getDocument();
-			$appConfig = JFactory::getConfig();
-			if ($params->get('page_title'))
-			{
-				$pageTitle = $params->get('page_title');
-			}
-			else
-			{
-				$pageTitle = $active->title;
-			}
-
-			$siteNamePosition = $appConfig->get('sitename_pagetitles');
-			if ($siteNamePosition == 0)
-			{
-				$document->setTitle($pageTitle);
-			}
-			elseif ($siteNamePosition == 1)
-			{
-				$document->setTitle($appConfig->get('sitename') . ' - ' . $pageTitle);
-			}
-			else
-			{
-				$document->setTitle($pageTitle . ' - ' . $appConfig->get('sitename'));
-			}
-
-			if ($params->get('menu-meta_keywords'))
-			{
-				$document->setMetadata('keywords', $params->get('menu-meta_keywords'));
-			}
-
-			if ($params->get('menu-meta_description'))
-			{
-				$document->setDescription($params->get('menu-meta_description'));
-			}
-
-			if ($params->get('robots'))
-			{
-				$document->setMetadata('robots', $params->get('robots'));
-			}
+			$this->setDocumentMetadata($params);
 		}
 
 		$this->category        = OSMembershipHelperDatabase::getCategory($categoryId);
@@ -114,6 +81,7 @@ class OSMembershipViewPlansHtml extends MPFViewHtml
 		$this->categoryId      = $categoryId;
 		$this->bootstrapHelper = new OSMembershipHelperBootstrap($config->twitter_bootstrap_version);
 		$this->params          = $params;
+
 		parent::display();
 	}
 }

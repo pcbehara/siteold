@@ -3,12 +3,11 @@
  * @package        Joomla
  * @subpackage     Membership Pro
  * @author         Tuan Pham Ngoc
- * @copyright      Copyright (C) 2012 - 2016 Ossolution Team
+ * @copyright      Copyright (C) 2012 - 2018 Ossolution Team
  * @license        GNU/GPL, see LICENSE.php
  */
-// no direct access
+
 defined('_JEXEC') or die;
-require_once JPATH_ROOT . '/components/com_osmembership/helper/helper.php';
 
 class OSMembershipHelperRoute
 {
@@ -103,12 +102,13 @@ class OSMembershipHelperRoute
 		{
 			//Create the link
 			$link    = 'index.php?option=com_osmembership&view=register&id=' . $id;
-			$needles = array('register' => array($id),  'plan' => array($id));
+			$needles = array('register' => array($id), 'plan' => array($id));
 			$catId   = (int) $plans[$id]->category_id;
+
 			if ($catId)
 			{
-				$link .= '&catid=' . $catId;
-				$needles['plans'] = self::getCategoriesPath($catId, 'id', false);
+				$link                  .= '&catid=' . $catId;
+				$needles['plans']      = self::getCategoriesPath($catId, 'id', false);
 				$needles['categories'] = $needles['plans'];
 
 			}
@@ -120,6 +120,19 @@ class OSMembershipHelperRoute
 		}
 
 		return $link;
+	}
+
+	/**
+	 * Method to find link to certain view without view key
+	 *
+	 * @param string $view
+	 * @param int    $Itemid
+	 *
+	 * @return string
+	 */
+	public static function getViewRoute($view, $Itemid)
+	{
+		return 'index.php?option=com_osmembership&view=' . $view . '&Itemid=' . self::findView($view, $Itemid);
 	}
 
 	/**
@@ -136,7 +149,7 @@ class OSMembershipHelperRoute
 			$fieldSuffix = OSMembershipHelper::getFieldSuffix();
 			$db          = JFactory::getDbo();
 			$query       = $db->getQuery(true);
-			$query->select('alias' . $fieldSuffix)
+			$query->select($db->quoteName('alias' . $fieldSuffix))
 				->from('#__osmembership_plans')
 				->where('id=' . (int) $id);
 			$db->setQuery($query);
@@ -154,7 +167,7 @@ class OSMembershipHelperRoute
 			$fieldSuffix = OSMembershipHelper::getFieldSuffix();
 			$db          = JFactory::getDbo();
 			$query       = $db->getQuery(true);
-			$query->select('alias' . $fieldSuffix)
+			$query->select($db->quoteName('alias' . $fieldSuffix))
 				->from('#__osmembership_categories')
 				->where('id=' . (int) $id);
 			$db->setQuery($query);
@@ -172,14 +185,17 @@ class OSMembershipHelperRoute
 			$db          = JFactory::getDbo();
 			$fieldSuffix = OSMembershipHelper::getFieldSuffix();
 			$query       = $db->getQuery(true);
-			$query->select('id, alias' . $fieldSuffix . ' AS alias, parent_id')
+			$query->select('id, parent_id')
+				->select($db->quoteName('alias' . $fieldSuffix, 'alias'))
 				->from('#__osmembership_categories')
 				->where('published = 1');
 			$db->setQuery($query);
 			$categories = $db->loadObjectList('id');
 		}
+
 		$paths = array();
 		$count = 0;
+
 		do
 		{
 			if (isset($categories[$id]))
@@ -191,6 +207,7 @@ class OSMembershipHelperRoute
 			{
 				break;
 			}
+
 			$count++;
 		} while ($id != $parentId && $count < 10);
 
@@ -209,17 +226,16 @@ class OSMembershipHelperRoute
 	 *
 	 * @return int
 	 */
-	public static function findView($view, $itemId)
+	public static function findView($view, $itemId = 0)
 	{
 		$needles = array($view => array(0));
+
 		if ($item = self::findItem($needles, $itemId))
 		{
 			return $item;
 		}
-		else
-		{
-			return 0;
-		}
+
+		return 0;
 	}
 
 	/**
@@ -240,15 +256,18 @@ class OSMembershipHelperRoute
 			self::$lookup = array();
 			$component    = JComponentHelper::getComponent('com_osmembership');
 			$items        = $menus->getItems('component_id', $component->id);
+
 			foreach ($items as $item)
 			{
 				if (isset($item->query) && isset($item->query['view']))
 				{
 					$view = $item->query['view'];
+
 					if (!isset(self::$lookup[$view]))
 					{
 						self::$lookup[$view] = array();
 					}
+
 					if (isset($item->query['id']))
 					{
 						self::$lookup[$view][$item->query['id']] = $item->id;
@@ -260,6 +279,7 @@ class OSMembershipHelperRoute
 				}
 			}
 		}
+
 		if ($needles)
 		{
 			foreach ($needles as $view => $ids)
