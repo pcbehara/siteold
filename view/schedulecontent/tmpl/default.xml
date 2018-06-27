@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<metadata>
+	<layout title="User's Schedule Content">
+		<message>
+			Display list of Schedule Content articles which the logged in subscriber can access to
+		</message>
+	</layout>		
+</metadata>

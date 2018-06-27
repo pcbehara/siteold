@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<install version="1.0" type="osmplugin" group="payment">
+	<name>os_cloud_payment</name>
+	<title>Cloud Payment</title>
+    <creationDate>August 2016</creationDate>
+    <author>Lee L.</author>
+    <authorEmail>lee@jumazi.com</authorEmail>
+    <authorUrl>http://www.jumazi.com</authorUrl>
+    <copyright>Copyright (C) 2016 Jumazi Team</copyright>
+    <license>http://www.gnu.org/licenses/gpl-2.0.html GNU/GPL</license>
+    <version>1.0.0</version>
+	<description>Cloud Payment Plugin For Membership Pro Extension</description>
+	<config>
+		<fields name="params">
+			<fieldset name="basic" addfieldpath="/administrator/components/com_osmembership/elements">
+				
+				<field name="cp_api_id_login" type="text" size="40" label="API Login" description="Enter your Cloud Payment API ID (100539: Main operation - 101964: Test operation)" default=""></field>
+				<field name="cp_url_api_new_payment" type="text" size="40" label="URL API (New Payment)" description="Enter URL API (New Payment) " default=""></field>
+				<field name="cp_url_api_stop_payment" type="text" size="40" label="URL API (Stop Payment)" description="Enter URL API (Stop Payment) " default=""></field>
+				<field name="cp_url_api_change_email" type="text" size="40" label="URL API (Change Email)" description="Enter URL API (Change Email) " default=""></field>
+				
+			</fieldset>
+		</fields>
+	</config>
+	<files>
+		<filename>os_cloud_payment.php</filename>
+	</files>
+	<installsql />
+	<installfile />
+</install>
